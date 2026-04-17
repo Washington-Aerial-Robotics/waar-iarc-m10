@@ -13,7 +13,7 @@ import '../widgets/connect_panel.dart';
 //  4. Connect/Disconnect button
 //  5. Landscape/portrait adaptive layout, for ease of use
 // 
-// Listes to TCPClient and updates log
+// Listens to TCPClient and updates log
 // Controls when to connect/disconnect
 // TLDR: contains the logic that ties UI -> TCP client -> log output.
 class DroneTcpConsole extends StatefulWidget {
