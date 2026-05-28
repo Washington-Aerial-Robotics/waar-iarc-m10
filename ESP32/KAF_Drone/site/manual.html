@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Manual Control Panel</title>
+    <link rel="icon" href="icon.png">
+    <link rel="stylesheet" href="styles.css"/>
+  </head>
+  <body>
+    <header class="topbar hdr">
+      <a class="button" href="homepage.html">Master Panel</a>
+      <h1 class="hdrl" id="manual">KAF Drone Ground Station Terminal</h1>
+      <a class="button" href="https://github.com/Washington-Aerial-Robotics/waar-iarc-m10/tree/Firmware-Kent/ESP32/KAF_Drone">Source Code</a>
+    </header>
+  <main class="manual-layout">
+    <section class="lc5">
+      <button class="button" id="arming" onclick="manual_arming(event.target)">Disarm Drone</button>
+      <button class="button" onclick="root_kill()">Kill</button>
+      <button class="button" onclick="root_manual()">Manual</button>
+      <button class="button" onclick="root_hover()">Hover</button>
+      <button class="button" onclick="root_dosafety(event.target)">Enable Safety</button>
+    </section>
+    <section class="lc3">
+      <div class="graph control-circle"><canvas id="cn0" onpointermove="load_joystick(0,event)" onpointerdown="load_joystick(0,event)" onpointerup="load_joystick(0,null)" onpointerout="load_joystick(0,null)"></canvas></div>
+      <div class="graph graph-manual"><canvas id="motorstat"></canvas></div>
+      <div class="graph control-circle"><canvas id="cn1" onpointermove="load_joystick(1,event)" onpointerdown="load_joystick(1,event)"></canvas></div>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
