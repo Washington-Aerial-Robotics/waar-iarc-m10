@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Logging Command Terminal</title>
+    <link rel="icon" href="icon.png">
+    <link rel="stylesheet" href="styles.css"/>
+  </head>
+  <body>
+    <header class="topbar hdr">
+      <a class="button" href="homepage.html">Master Panel</a>
+      <h1 class="hdrl" id="logging">KAF Drone Ground Station Terminal</h1>
+      <a class="button" href="https://github.com/Washington-Aerial-Robotics/waar-iarc-m10/tree/Firmware-Kent/ESP32/KAF_Drone">Source Code</a>
+    </header>
+  <main class="logging-layout">
+    <section class="lc1">
+      <div class="pnl">
+          <div class="pnl-title">Firmware</div>
+          <div class="pnl-body">
+            <div class="lc1">
+              <label for="periphselect">Peripheral:</label>
+              <select id="periphselect" class="field" oninput="log_selectdown()"></select>
+              <label for="periphup" class="button button-thin">Upload</label>
+              <input type="file" id="periphup" class="fileselect" oninput="log_upload(event)"/>
+              <a id="periphdown" class="button button-thin" href="cmd?DPRP=0$" download="periph.bin">Download</a>
+            </div>
+          </div>
+        </div>
+      <div class="pnl">
+          <div class="pnl-title">Quick Commands</div>
+          <div class="pnl-body">
+            <div class="lc3">
+              <button class="button" onclick="log_quick('474A0001')">Arm</button>
+              <button class="button" onclick="log_quick('474A0000')">Disarm</button>
+              <button class="button" onclick="log_quick('476400')">Kill</button>
+              <button class="button" onclick="log_quick('475B0001')">Launch</button>
+              <button class="button" onclick="log_quick('475B0002')">Land</button>
+              <button class="button" onclick="log_quick('475B0003')">Pos Lock</button>
+              <button class="button" onclick="log_quick('474000')">Ping</button>
+              <button class="button" onclick="log_quick('474100')">Devices</button>
+              <button class="button" onclick="log_quick('474200')">Get State</button>
+              <button class="button" onclick="log_quick('475A0057')">Save</button>
+              <button class="button" onclick="log_quick('475A0044')">Reset</button>
+              <button class="button" onclick="log_quick('475A0052')">Load</button>
+            </div>
+          </div>
+        </div>
+    </section>
+    <section class="lc1">
+      <div class="lc1">
+        <pre id="commandlog", class="cmdprompt">KAF Drone Serial Command Terminal<br></pre>
+        <input id="commandinput" type="text" class="field cmdfield", onkeyup="log_comcmd(event)" placeholder="Send Quadcopter Command"/>
+      </div>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
