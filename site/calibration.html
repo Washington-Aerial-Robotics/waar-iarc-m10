@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Calibration Manager</title>
+    <link rel="icon" href="icon.png">
+    <link rel="stylesheet" href="styles.css"/>
+  </head>
+  <body>
+    <header class="topbar hdr">
+      <a class="button" href="homepage.html">Master Panel</a>
+      <h1 class="hdrl" id="calibration">KAF Drone Ground Control Calibration</h1>
+      <a class="button" href="https://github.com/Washington-Aerial-Robotics/waar-iarc-m10/tree/Firmware-Kent/ESP32/KAF_Drone">Source Code</a>
+    </header>
+    <main class="calib-layout">
+      <section class="lc1">
+        <div class="pnl">
+          <div class="pnl-title">Data Management</div>
+          <div class="pnl-body">
+            <div class="lc1">
+              <a class="button button-thin" href="cmd?DALL=" download="info.bin">Download Full Info</a>
+              <label for="upinfo" class="button button-thin">Upload Full Info</label>
+              <input type="file" id="upinfo" class="fileselect" oninput="root_upload(event,'INFO=')"/>
+              <button class="button button-thin" onclick="calib_resetdata()">Reset Full Info</button>
+              <button class="button button-thin" onclick="root_savedata()">Save Full Info</button>
+              <a class="button button-thin" href="cmd?DCAL=" download="calibration.bin">Download Calibration</a>
+              <label for="upcalb" class="button button-thin">Upload Calibration</label>
+              <input type="file" id="upcalb" class="fileselect" oninput="root_upload(event,'CALB=')"/>
+            </div>
+          </div>
+        </div>
+        <div class="pnl">
+          <div class="pnl-title">Position</div>
+          <div class="pnl-body">
+            <div class="lcunits">
+              <label for="p0">Pos X</label>
+              <input id="p0" type="text" class="field" onfocus="root_updateinput(event.target)" onfocusout="calib_update(event)"/>
+              <label>m</label>
+              <label for="p1">Pos Y</label>
+              <input id="p1" type="text" class="field" onfocus="root_updateinput(event.target)" onfocusout="calib_update(event)"/>
+              <label>m</label>
+              <label for="p2">Pos Z</label>
+              <input id="p2" type="text" class="field" onfocus="root_updateinput(event.target)" onfocusout="calib_update(event)"/>
+              <label>m</label>
+            </div>
+          </div>
+        </div>
+        <div class="pnl">
+          <div class="pnl-title">Sensor Filter Values</div>
+          <div class="pnl-body">
+            <div class="lccoord">
+              <label>Sensor</label>
+              <label>Gain</label>
+              <label>Offset</label>
+              <label>Stdev</label>
+              <label>GYRO X</label>
+              <input id="c3" type="text" class="field"/>
+              <input id="c4" type="text" class="field"/>
+              <input id="c5" type="text" class="field"/>
+              <label>GYRO Y</label>
+              <input id="c6" type="text" class="field"/>
+              <input id="c7" type="text" class="field"/>
+              <input id="c8" type="text" class="field"/>
+              <label>GYRO Z</label>
+              <input id="c9" type="text" class="field"/>
+              <input id="c10" type="text" class="field"/>
+              <input id="c11" type="text" class="field"/>
+              <label>ACCEL X</label>
+              <input id="c12" type="text" class="field"/>
+              <input id="c13" type="text" class="field"/>
+              <input id="c14" type="text" class="field"/>
+              <label>ACCEL Y</label>
+              <input id="c15" type="text" class="field"/>
+              <input id="c16" type="text" class="field"/>
+              <input id="c17" type="text" class="field"/>
+              <label>ACCEL Z</label>
+              <input id="c18" type="text" class="field"/>
+              <input id="c19" type="text" class="field"/>
+              <input id="c20" type="text" class="field"/>
+              <label>MAG X</label>
+              <input id="c21" type="text" class="field"/>
+              <input id="c22" type="text" class="field"/>
+              <input id="c23" type="text" class="field"/>
+              <label>MAG Y</label>
+              <input id="c24" type="text" class="field"/>
+              <input id="c25" type="text" class="field"/>
+              <input id="c26" type="text" class="field"/>
+              <label>MAG Z</label>
+              <input id="c27" type="text" class="field"/>
+              <input id="c28" type="text" class="field"/>
+              <input id="c29" type="text" class="field"/>
+              <label>BARO</label>
+              <input id="c30" type="text" class="field"/>
+              <input id="c31" type="text" class="field"/>
+              <input id="c32" type="text" class="field"/>
+              <label>TEMP</label>
+              <input id="c33" type="text" class="field"/>
+              <input id="c34" type="text" class="field"/>
+              <input id="c35" type="text" class="field"/>
+              <label>GPS LAT</label>
+              <input id="c36" type="text" class="field"/>
+              <input id="c37" type="text" class="field"/>
+              <input id="c38" type="text" class="field"/>
+              <label>GPS LNG</label>
+              <input id="c39" type="text" class="field"/>
+              <input id="c40" type="text" class="field"/>
+              <input id="c41" type="text" class="field"/>
+              <label>GPS ALT</label>
+              <input id="c42" type="text" class="field"/>
+              <input id="c43" type="text" class="field"/>
+              <input id="c44" type="text" class="field"/>
+              <label>DW X</label>
+              <input id="c45" type="text" class="field"/>
+              <input id="c46" type="text" class="field"/>
+              <input id="c47" type="text" class="field"/>
+              <label>DW Y</label>
+              <input id="c48" type="text" class="field"/>
+              <input id="c49" type="text" class="field"/>
+              <input id="c50" type="text" class="field"/>
+              <label>DW Z</label>
+              <input id="c51" type="text" class="field"/>
+              <input id="c52" type="text" class="field"/>
+              <input id="c53" type="text" class="field"/>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section class="lc1">
+        <div class="pnl">
+          <div class="pnl-title">Calibration & Tuning</div>
+          <div class="pnl-body">
+            <div class="lc1">
+              <button class="button button-thin" onclick="calib_sensecalib()">Sensor Calibration</button>
+              <button class="button button-thin" onclick="calib_magcalib()">Magnetometer Calibration</button>
+              <button class="button button-thin" onclick="calib_simpidtune()">Simulation PID Tuning</button>
+              <button class="button button-thin" onclick="calib_physpidtune()">Physical PID Tuning</button>
+              <label for="upsims" class="button button-thin">Set Drone System ID</label>
+              <input type="file" id="upsims" class="fileselect" oninput="root_upload(event,'SIMS=')"/>
+              <label for="upresp" class="button button-thin">Set PID Response Data</label>
+              <input type="file" id="upresp" class="fileselect" oninput="root_upload(event,'RESP=')"/>
+            </div>
+          </div>
+        </div>
+        <div class="pnl">
+          <div class="pnl-title">Velocity</div>
+          <div class="pnl-body">
+            <div class="lcunits">
+              <label for="v0">Veloc X</label>
+              <input id="v0" type="text" class="field" onfocus="root_updateinput(event.target)" onfocusout="calib_update(event)"/>
+              <label>m/s</label>
+              <label for="v1">Veloc Y</label>
+              <input id="v1" type="text" class="field" onfocus="root_updateinput(event.target)" onfocusout="calib_update(event)"/>
+              <label>m/s</label>
+              <label for="v2">Veloc Z</label>
+              <input id="v2" type="text" class="field" onfocus="root_updateinput(event.target)" onfocusout="calib_update(event)"/>
+              <label>m/s</label>
+            </div>
+          </div>
+        </div>
+        <div class="pnl">
+          <div class="pnl-title">Control Constants</div>
+          <div class="pnl-body">
+            <div class="lcunits">
+              <label for="c0">Angle A</label>
+              <input id="c0" type="text" class="field"/>
+              <label>Hz</label>
+              <label for="c1">Pos A</label>
+              <input id="c1" type="text" class="field"/>
+              <label>Hz</label>
+              <label for="c2">Grav G</label>
+              <input id="c2" type="text" class="field"/>
+              <label>m/s2</label>
+            </div>
+          </div>
+        </div>
+        <div class="pnl">
+          <div class="pnl-title">PID Gain Values</div>
+          <div class="pnl-body">
+            <div class="lccoord">
+              <label>Controller</label>
+              <label>Kp</label>
+              <label>Ki</label>
+              <label>Kd</label>
+              <label>Position</label>
+              <input id="c54" type="text" class="field"/>
+              <input id="c55" type="text" class="field"/>
+              <input id="c56" type="text" class="field"/>
+              <label>Velocity</label>
+              <input id="c57" type="text" class="field"/>
+              <input id="c58" type="text" class="field"/>
+              <input id="c59" type="text" class="field"/>
+              <label>Thrust</label>
+              <input id="c60" type="text" class="field"/>
+              <input id="c61" type="text" class="field"/>
+              <input id="c62" type="text" class="field"/>
+              <label>Attitude</label>
+              <input id="c63" type="text" class="field"/>
+              <input id="c64" type="text" class="field"/>
+              <input id="c65" type="text" class="field"/>
+              <label>W Rate X</label>
+              <input id="c66" type="text" class="field"/>
+              <input id="c67" type="text" class="field"/>
+              <input id="c68" type="text" class="field"/>
+              <label>W Rate Y</label>
+              <input id="c69" type="text" class="field"/>
+              <input id="c70" type="text" class="field"/>
+              <input id="c71" type="text" class="field"/>
+              <label>W Rate Z</label>
+              <input id="c72" type="text" class="field"/>
+              <input id="c73" type="text" class="field"/>
+              <input id="c74" type="text" class="field"/>
+            </div>
+          </div>
+        </div>
+        <div class="pnl">
+          <div class="pnl-title">Magnetometer Matrix</div>
+          <div class="pnl-body">
+            <div class="lccoord">
+              <label>-</label>
+              <label>i=1</label>
+              <label>i=2</label>
+              <label>i=3</label>
+              <label>j=1</label>
+              <input id="c75" type="text" class="field"/>
+              <input id="c76" type="text" class="field"/>
+              <input id="c77" type="text" class="field"/>
+              <label>j=2</label>
+              <input id="c78" type="text" class="field"/>
+              <input id="c79" type="text" class="field"/>
+              <input id="c80" type="text" class="field"/>
+              <label>j=3</label>
+              <input id="c81" type="text" class="field"/>
+              <input id="c82" type="text" class="field"/>
+              <input id="c83" type="text" class="field"/>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section class="lc1">
+        <div class="graph graph-resp"><canvas id="response"></canvas></div>
+      </section>
+    </main>
+    <script src="app.js"></script>
+  </body>
+</html>
