@@ -8,6 +8,7 @@ from sparse_voxel_map import SparseVoxelMap
 model = None  # initialized in main()
 
 MAX_CAMERA_INDEX = 5
+FORCED_CAMERA_INDEX = None  # set to an int (e.g. 2) from find_camera_index.py to skip auto-scan
 
 FRAME_WIDTH = 2560
 FRAME_HEIGHT = 720
@@ -170,31 +171,55 @@ def draw_3d_box(image, x, y, w, h, label, d_near, d_far, color=(0, 255, 0)):
                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1, cv2.LINE_AA)
 
 
+def _eye_width_for(w, h):
+    if w == 2560 and h == 720:
+        return 1280
+    if w == 1280 and h == 720:
+        return 640
+    return None
+
+
+def _try_open(idx, forced):
+    cap = cv2.VideoCapture(idx)
+    if not cap.isOpened():
+        cap.release()
+        return None
+
+    if forced:
+        # some USB stereo cameras only reach their full side-by-side
+        # resolution in MJPG mode; request that explicitly as a fallback
+        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 2560)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+
+    ret, frame = cap.read()
+    if not ret:
+        cap.release()
+        return None
+
+    h, w = frame.shape[:2]
+    eye_w = _eye_width_for(w, h)
+    if eye_w is None:
+        cap.release()
+        return None
+
+    mode = "forced MJPG" if forced else "default"
+    print(f"Found stereo camera at index {idx} ({w}x{h}, {mode} mode)")
+    return cap, eye_w
+
+
 def find_stereo_camera(max_index=MAX_CAMERA_INDEX):
     # camera indices shift by OS/driver/whatever else is plugged in, so scan
     # for the first index that opens and reports a stereo-shaped frame
     # instead of assuming index 0 is always the stereo camera
-    for idx in range(max_index):
-        cap = cv2.VideoCapture(idx)
-        if not cap.isOpened():
-            cap.release()
-            continue
+    indices = [FORCED_CAMERA_INDEX] if FORCED_CAMERA_INDEX is not None else range(max_index)
 
-        ret, frame = cap.read()
-        if not ret:
-            cap.release()
-            continue
+    for idx in indices:
+        result = _try_open(idx, forced=False) or _try_open(idx, forced=True)
+        if result is not None:
+            return result
 
-        h, w = frame.shape[:2]
-        if w == 2560 and h == 720:
-            print(f"Found stereo camera at index {idx} ({w}x{h})")
-            return cap, 1280
-        if w == 1280 and h == 720:
-            print(f"Found single-eye camera at index {idx} ({w}x{h})")
-            return cap, 640
-
-        print(f"Camera at index {idx} reported {w}x{h}, skipping")
-        cap.release()
+        print(f"Camera at index {idx}: no stereo-shaped frame in default or forced mode, skipping")
 
     return None, None
 
