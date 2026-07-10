@@ -7,7 +7,7 @@ from sparse_voxel_map import SparseVoxelMap
 
 model = None  # initialized in main()
 
-CAM_INDEX = 0
+MAX_CAMERA_INDEX = 5
 
 FRAME_WIDTH = 2560
 FRAME_HEIGHT = 720
@@ -170,28 +170,39 @@ def draw_3d_box(image, x, y, w, h, label, d_near, d_far, color=(0, 255, 0)):
                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1, cv2.LINE_AA)
 
 
+def find_stereo_camera(max_index=MAX_CAMERA_INDEX):
+    # camera indices shift by OS/driver/whatever else is plugged in, so scan
+    # for the first index that opens and reports a stereo-shaped frame
+    # instead of assuming index 0 is always the stereo camera
+    for idx in range(max_index):
+        cap = cv2.VideoCapture(idx)
+        if not cap.isOpened():
+            cap.release()
+            continue
+
+        ret, frame = cap.read()
+        if not ret:
+            cap.release()
+            continue
+
+        h, w = frame.shape[:2]
+        if w == 2560 and h == 720:
+            print(f"Found stereo camera at index {idx} ({w}x{h})")
+            return cap, 1280
+        if w == 1280 and h == 720:
+            print(f"Found single-eye camera at index {idx} ({w}x{h})")
+            return cap, 640
+
+        print(f"Camera at index {idx} reported {w}x{h}, skipping")
+        cap.release()
+
+    return None, None
+
+
 def main():
-    cap = cv2.VideoCapture(0)
-
-    if not cap.isOpened():
-        print("Could not open camera at index 0")
-        return
-
-    ret, test_frame = cap.read()
-    if not ret:
-        print("Could not read from camera")
-        return
-
-    actual_w = test_frame.shape[1]
-    actual_h = test_frame.shape[0]
-    print(f"Camera frame size: {actual_w}x{actual_h}")
-
-    if actual_w == 2560 and actual_h == 720:
-        eye_w = 1280
-    elif actual_w == 1280 and actual_h == 720:
-        eye_w = 640
-    else:
-        print(f"Unexpected resolution {actual_w}x{actual_h}")
+    cap, eye_w = find_stereo_camera()
+    if cap is None:
+        print(f"Could not find a 2560x720 or 1280x720 camera on indices 0-{MAX_CAMERA_INDEX - 1}")
         return
 
     stereo = build_stereo_matcher()
