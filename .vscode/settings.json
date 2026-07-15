@@ -1,5 +1,6 @@
 {
     "githubPullRequests.ignoredPullRequestBranches": [
         "main"
-    ]
+    ],
+    "idf.pythonInstallPath": "/Users/juvesanchez/anaconda3/bin/python"
 }
