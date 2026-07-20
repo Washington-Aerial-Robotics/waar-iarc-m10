@@ -1,0 +1,28 @@
+{
+  "camera_index": 0,
+  "request_width": 1920,
+  "request_height": 1080,
+  "use_v4l2": true,
+  "tag_family": "tag36h11",
+  "tag_size_m": 0.0381,
+  "min_confidence": 0.1,
+  "enable_visualization": false,
+  "enable_csv_log": true,
+  "use_rmse_confidence": true,
+  "use_kalman_fusion": true,
+  "field_x": 94.0,
+  "field_y": 12.0,
+  "map_resolution": 0.2,
+  "pose_source": "stub",
+  "esp32_host": "192.168.1.100",
+  "esp32_port": 23,
+  "esp32_drone_id": 65,
+  "drone_camera": {
+    "position_m": [0.0, 0.0, 0.0],
+    "quaternion_xyzw": [0.0, 0.0, 0.0, 1.0]
+  },
+  "stub_drone": {
+    "position_m": [0.0, 0.0, 1.5],
+    "quaternion_xyzw": [0.0, 0.0, 0.0, 1.0]
+  }
+}

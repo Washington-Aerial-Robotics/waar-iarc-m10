@@ -72,6 +72,43 @@ class MultiAgentCoordinator:
             CollisionAvoidance()
         )
 
+        self.field_x_m = 94.0
+        self.field_y_m = 12.0
+        self.external_min_confidence = 0.1
+
+    def apply_external_mines(
+        self,
+        mines: list[tuple[int, float, float, float]],
+    ) -> None:
+        """
+        Inject fused mine detections into every simulator world model.
+
+        Each item is (tag_id, world_x_m, world_y_m, confidence).
+        """
+        from domain.coord_bridge import world_to_fine
+        from use_cases.update_world_model import apply_mine_detection
+
+        for sim in self.simulators:
+            world = sim.world
+            for tag_id, world_x, world_y, confidence in mines:
+                fx, fy = world_to_fine(
+                    world_x,
+                    world_y,
+                    world.fine_cols,
+                    world.fine_rows,
+                    self.field_x_m,
+                    self.field_y_m,
+                )
+                apply_mine_detection(
+                    world,
+                    tag_id,
+                    fx,
+                    fy,
+                    confidence,
+                    sim.inflation_radius,
+                    self.external_min_confidence,
+                )
+
     # ---------------------------------------------------------
     # Main loop
     # ---------------------------------------------------------

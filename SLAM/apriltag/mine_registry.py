@@ -2,15 +2,18 @@ from __future__ import annotations
 
 import numpy as np
 
+from .kalman import TagTrack
 from .models import FusedMine
 
 
 class MineRegistry:
     """Fuse repeated observations of the same tag ID into one mine estimate."""
 
-    def __init__(self, min_confidence: float = 0.1):
+    def __init__(self, min_confidence: float = 0.1, use_kalman: bool = True):
         self.min_confidence = min_confidence
+        self.use_kalman = use_kalman
         self._mines: dict[int, FusedMine] = {}
+        self._tracks: dict[int, TagTrack] = {}
 
     @property
     def mines(self) -> dict[int, FusedMine]:
@@ -28,6 +31,12 @@ class MineRegistry:
             return None
 
         world_position = world_position.astype(np.float64).reshape(3)
+
+        if self.use_kalman:
+            if tag_id not in self._tracks:
+                self._tracks[tag_id] = TagTrack(world_position, timestamp)
+            track = self._tracks[tag_id]
+            world_position = track.update(world_position, timestamp)
 
         if tag_id not in self._mines:
             fused = FusedMine(

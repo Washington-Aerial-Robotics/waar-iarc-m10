@@ -36,6 +36,26 @@ def observe_block(
         _recompute_inflation(world, inflation_radius)
 
 
+def apply_mine_detection(
+    world: WorldModel,
+    tag_id: int,
+    fx: int,
+    fy: int,
+    confidence: float,
+    inflation_radius: float,
+    min_confidence: float = 0.1,
+) -> bool:
+    """Mark a fine-grid cell as HAZARD from an external AprilTag detection."""
+    del tag_id  # reserved for future per-tag bookkeeping
+    if confidence < min_confidence:
+        return False
+    if not (0 <= fx < world.fine_cols and 0 <= fy < world.fine_rows):
+        return False
+    world.detected[fx, fy] = HAZARD
+    _recompute_inflation(world, inflation_radius)
+    return True
+
+
 def _recompute_inflation(world: WorldModel, inflation_radius: float) -> None:
     FC, FR = world.fine_cols, world.fine_rows
     r = int(math.ceil(inflation_radius))

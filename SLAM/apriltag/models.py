@@ -19,6 +19,7 @@ class AprilTagDetection:
     confidence: float
     decision_margin: float | None
     area_px: float
+    reproj_rmse_px: float | None
     corners_px: np.ndarray
 
 
