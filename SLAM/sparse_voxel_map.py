@@ -1,6 +1,4 @@
-import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 from scipy.spatial.transform import Rotation as R
 
 
@@ -78,6 +76,11 @@ class SparseVoxelMap:
             row, col = self._world_to_grid_2d(world_x, world_y)
             self._inflate_2d(row, col)
 
+    def add_mine_world(self, world_x: float, world_y: float):
+        """Mark a discovered mine at world coordinates (meters)."""
+        row, col = self._world_to_grid_2d(world_x, world_y)
+        self._inflate_2d(row, col)
+
     def mark_free(self, x: float, y: float):
         row, col = self._world_to_grid_2d(x, y)
         if not self._in_bounds_2d(row, col):
@@ -123,6 +126,8 @@ class SparseVoxelMap:
         return grid
 
     def generate_visualization(self):
+        import matplotlib.pyplot as plt
+
         grid_3d = self.generate_grid_3d()
         proj    = np.max(grid_3d, axis=2)
         grid_2d = self.generate_grid_2d()

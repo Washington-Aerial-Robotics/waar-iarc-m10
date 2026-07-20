@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <!-- Deploy root: Vercel Root Directory must be `web`; Output Directory `.` (not `web`). -->
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AprilTag camera detector</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main>
+    <h1>AprilTag camera detector</h1>
+    <p class="sub">
+      Runs the official AprilTag library in your browser (WebAssembly). Tag family:
+      <strong>tag36h11</strong> — same as the <code>pupil_apriltags</code> scripts in this project.
+    </p>
+
+    <div class="panel">
+      <div class="toolbar">
+        <button type="button" id="btnStart">Start camera</button>
+        <button type="button" id="btnStop" class="secondary">Stop</button>
+        <label>
+          Speed
+          <select id="decimate" title="quad_decimate: lower is sharper, slower">
+            <option value="2">Balanced (2×)</option>
+            <option value="1">Sharp (1×)</option>
+            <option value="3">Fast (3×)</option>
+          </select>
+        </label>
+        <label title="Uses rough focal length = image width; tags assumed 150 mm if size not set per ID">
+          <input type="checkbox" id="pose" />
+          Rough distance
+        </label>
+        <span style="color:var(--muted);font-size:0.85rem"><span id="fps">0</span> fps</span>
+      </div>
+      <p id="status" class="status"></p>
+      <div class="grid">
+        <div class="view-wrap">
+          <video id="video" playsinline muted></video>
+          <canvas id="canvas" width="640" height="480"></canvas>
+        </div>
+        <div>
+          <p style="margin:0 0 0.5rem;font-size:0.9rem;color:var(--muted)">Detected tags</p>
+          <ul id="tagList"></ul>
+        </div>
+      </div>
+      <p class="note">
+        Local preview: from the <code>web</code> folder run <code>npx serve .</code>.
+        Browsers need HTTPS (or <code>localhost</code>) for camera access; keep WASM and the worker on the same origin.
+      </p>
+      <p class="note">
+        <strong>Vercel:</strong> set <strong>Root Directory</strong> to <code>web</code>, Framework <strong>Other</strong>,
+        Build Command empty, <strong>Output Directory</strong> <code>.</code> (do not use <code>web</code> again).
+        Keep <code>web/vercel.json</code> for WASM headers. If deploys skip after Python-only commits, turn off
+        “skip deployments when no changes to root directory” in project settings.
+      </p>
+      <p class="note">
+        Detector:
+        <a href="https://github.com/arenaxr/apriltag-js-standalone" style="color:var(--accent)">apriltag-js-standalone</a>
+        (AprilTag C library via Emscripten).
+      </p>
+    </div>
+  </main>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

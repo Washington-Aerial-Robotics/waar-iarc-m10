@@ -1,0 +1,22 @@
+# Python
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Local / machine-specific
+.env
+.env.*
+*.npz
+apriltag_log.csv
+
+# Editor / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

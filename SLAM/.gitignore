@@ -1,0 +1,5 @@
+__pycache__/
+mine_detections.csv
+occ_grid_2d.npy
+occ_grid_3d.npy
+occ_grid_proj.png
