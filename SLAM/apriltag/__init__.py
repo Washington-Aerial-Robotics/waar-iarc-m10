@@ -7,6 +7,7 @@ from .geometry import homogeneous_from_pose, tag_pose_to_world
 from .logger import DetectionCsvLogger
 from .mine_registry import MineRegistry
 from .models import AprilTagDetection, FusedMine, PoseEstimate
+from .platform_utils import is_headless
 from .pose_provider import Esp32PoseProvider, PoseProvider, StubPoseProvider, create_pose_provider
 
 __all__ = [
@@ -25,6 +26,7 @@ __all__ = [
     "StubPoseProvider",
     "create_pose_provider",
     "homogeneous_from_pose",
+    "is_headless",
     "load_calibration",
     "tag_pose_to_world",
     "world_to_fine",

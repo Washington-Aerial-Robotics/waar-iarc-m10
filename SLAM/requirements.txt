@@ -4,6 +4,7 @@ opencv-python>=4.8,<4.12
 scipy>=1.7,<1.14
 matplotlib
 pupil-apriltags
+ultralytics>=8.0,<9
 
 # Optional: stereo_depth.py uses pandas; mine_detection_pipeline does not require it.
 pandas>=1.5,<3

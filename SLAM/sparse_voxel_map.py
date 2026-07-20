@@ -15,6 +15,7 @@ class SparseVoxelMap:
         self.clearance = clearance
 
         self.temporary_voxels = set()
+        self.permanent_obstacle_voxels = set()
         self.permanent_cells = {}  # (row, col) -> UNKNOWN|FREE|HAZARD|INFLATED
 
         self.max_row = int(field_y / self.resolution)
@@ -59,13 +60,30 @@ class SparseVoxelMap:
         return neighbors
 
     def new_obstacle(self, obstacle_points, quaternion, gps_position):
+        """Legacy ephemeral obstacle write (local 3D voxels, pruned with drone motion)."""
         for obstacle_point in obstacle_points:
             rotated = self._rotate_point(obstacle_point, quaternion)
             world_point = gps_position + rotated
             row, col, layer = self._world_to_grid_3d(
                 world_point[0], world_point[1], world_point[2]
             )
-            self._inflate_3d(row, col, layer)
+            self._inflate_3d(row, col, layer, target=self.temporary_voxels)
+
+    def add_obstacle_world(
+        self,
+        world_x: float,
+        world_y: float,
+        world_z: float,
+        *,
+        height_m: float = 2.0,
+        radius_m: float = 0.3,
+    ) -> None:
+        """Mark a fused obstacle permanently in the 3D map (trees, poles, etc.)."""
+        half_h = max(self.resolution, height_m / 2.0)
+        z_layers = max(1, int(np.ceil(half_h / self.resolution)))
+        for dz in range(-z_layers, z_layers + 1):
+            row, col, layer = self._world_to_grid_3d(world_x, world_y, world_z + dz * self.resolution)
+            self._inflate_3d(row, col, layer, target=self.permanent_obstacle_voxels, radius_m=radius_m)
 
     def new_mine(self, mine_points, quaternion, gps_position):
         for mine_point in mine_points:
@@ -90,7 +108,8 @@ class SparseVoxelMap:
 
     def is_obstacle(self, x: float, y: float, z: float):
         row, col, layer = self._world_to_grid_3d(x, y, z)
-        return (row, col, layer) in self.temporary_voxels
+        key = (row, col, layer)
+        return key in self.temporary_voxels or key in self.permanent_obstacle_voxels
 
     def is_mine(self, x: float, y: float):
         row, col = self._world_to_grid_2d(x, y)
@@ -104,16 +123,18 @@ class SparseVoxelMap:
         self.temporary_voxels = {
             (row, col, layer)
             for (row, col, layer) in self.temporary_voxels
-            if (row - drone_row)**2 + (col - drone_col)**2 + (layer - drone_layer)**2
+            if (row - drone_row) ** 2 + (col - drone_col) ** 2 + (layer - drone_layer) ** 2
             <= radius_cells**2
         }
+        # permanent_obstacle_voxels are not pruned — fixed field obstacles stay on the map
 
     def generate_grid_3d(self):
-        if not self.temporary_voxels:
+        all_voxels = self.temporary_voxels | self.permanent_obstacle_voxels
+        if not all_voxels:
             return np.zeros((self.max_row, self.max_col, 1), dtype=np.uint8)
-        max_layer = max(layer for row, col, layer in self.temporary_voxels) + 1
+        max_layer = max(layer for row, col, layer in all_voxels) + 1
         grid = np.zeros((self.max_row, self.max_col, max_layer), dtype=np.uint8)
-        for (row, col, layer) in self.temporary_voxels:
+        for (row, col, layer) in all_voxels:
             if self._in_bounds_3d(row, col, layer):
                 grid[row, col, layer] = 1
         return grid
@@ -139,7 +160,7 @@ class SparseVoxelMap:
 
         ax1.imshow(proj, origin="lower", interpolation="nearest",
                    extent=[0, max_x, 0, max_y])
-        ax1.set_title("3D Obstacle Map (drone navigation)")
+        ax1.set_title("3D Obstacle Map (drone flight — trees/obstacles)")
         ax1.set_xlabel("x (meters)")
         ax1.set_ylabel("y (meters)")
 
@@ -191,11 +212,22 @@ class SparseVoxelMap:
         y = (row + 0.5) * self.resolution
         return x, y
 
-    def _inflate_3d(self, row, col, layer):
-        for dr, dc, dl in self.offsets_3d:
+    def _inflate_3d(self, row, col, layer, target=None, radius_m: float | None = None):
+        target = self.temporary_voxels if target is None else target
+        if radius_m is None:
+            offsets = self.offsets_3d
+        else:
+            r_cells = int(np.ceil(radius_m / self.resolution))
+            offsets = []
+            for dr in range(-r_cells, r_cells + 1):
+                for dc in range(-r_cells, r_cells + 1):
+                    for dl in range(-r_cells, r_cells + 1):
+                        if (dr**2 + dc**2 + dl**2) <= r_cells**2:
+                            offsets.append((dr, dc, dl))
+        for dr, dc, dl in offsets:
             nr, nc, nl = row + dr, col + dc, layer + dl
             if self._in_bounds_3d(nr, nc, nl):
-                self.temporary_voxels.add((nr, nc, nl))
+                target.add((nr, nc, nl))
 
     def _inflate_2d(self, row, col):
         if self._in_bounds_2d(row, col):

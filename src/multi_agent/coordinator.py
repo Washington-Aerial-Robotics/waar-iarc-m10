@@ -75,6 +75,29 @@ class MultiAgentCoordinator:
         self.field_x_m = 94.0
         self.field_y_m = 12.0
         self.external_min_confidence = 0.1
+        self.external_obstacles: list[dict] = []
+
+    def apply_external_obstacles(
+        self,
+        obstacles: list[tuple[int, str, float, float, float, float]],
+    ) -> None:
+        """
+        Store fused obstacle detections for drone-flight planning.
+
+        Does not modify the human path mine map (map3 HAZARD layer).
+        Each item is (obstacle_id, label, world_x_m, world_y_m, confidence, radius_m).
+        """
+        for obstacle_id, label, world_x, world_y, confidence, radius_m in obstacles:
+            self.external_obstacles.append(
+                {
+                    "obstacle_id": obstacle_id,
+                    "label": label,
+                    "world_x": world_x,
+                    "world_y": world_y,
+                    "confidence": confidence,
+                    "radius_m": radius_m,
+                }
+            )
 
     def apply_external_mines(
         self,

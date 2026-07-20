@@ -1,5 +1,9 @@
 __pycache__/
+.venv/
 mine_detections.csv
+pipeline_stats.log
+obstacle_map.json
+shared_obstacle_map.json
 occ_grid_2d.npy
 occ_grid_3d.npy
 occ_grid_proj.png

@@ -12,11 +12,13 @@ class CameraSource:
         request_width: int = 1920,
         request_height: int = 1080,
         use_v4l2: bool = True,
+        force_mjpeg: bool = False,
     ):
         self.camera_index = camera_index
         self.request_width = request_width
         self.request_height = request_height
         self.use_v4l2 = use_v4l2
+        self.force_mjpeg = force_mjpeg
         self._cap: cv2.VideoCapture | None = None
 
     def open(self) -> None:
@@ -27,6 +29,9 @@ class CameraSource:
 
         if self._cap is None or not self._cap.isOpened():
             raise RuntimeError(f"Could not open camera index {self.camera_index}")
+
+        if self.force_mjpeg:
+            self._cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
 
         self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.request_width)
         self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.request_height)
