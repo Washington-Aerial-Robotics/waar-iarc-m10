@@ -8,6 +8,30 @@
 #include <cstring>
 #endif
 
+static void updateImuAttitudeEstimate( float dt ) {
+  if( dt <= 0.0F ) {
+    return;
+  }
+  float ax = kafenv.f.accelInput.x;
+  float ay = kafenv.f.accelInput.y;
+  float az = kafenv.f.accelInput.z;
+  float gx = kafenv.f.gyroInput.x;
+  float gy = kafenv.f.gyroInput.y;
+  float gz = kafenv.f.gyroInput.z;
+
+  if( kafenv.f.accelInput.stdev < 1e8F ) {
+    float rollMeas = atan2f( ay, az );
+    float pitchMeas = atan2f( -ax, sqrtf( ay * ay + az * az ) );
+    const float alpha = 0.98F;
+    kafenv.u.stateEstimate.t.z = alpha * ( kafenv.u.stateEstimate.t.z + gx * dt ) + ( 1.0F - alpha ) * rollMeas;
+    kafenv.u.stateEstimate.t.y = alpha * ( kafenv.u.stateEstimate.t.y + gy * dt ) + ( 1.0F - alpha ) * pitchMeas;
+    kafenv.u.stateEstimate.t.x += gz * dt;
+    kafenv.u.stateEstimate.w.x = gx;
+    kafenv.u.stateEstimate.w.y = gy;
+    kafenv.u.stateEstimate.w.z = gz;
+  }
+}
+
 void softwareInit() {
   kafenv.u.flightMode = NULL_MODE;
   KF_VEC3( i, kaf_pidreset( &( kafenv.s.positionPID[i] ) ) );
@@ -28,6 +52,9 @@ void softwareInit() {
 }
 
 void controlsStep() {
+  float timeStep = kafenv.f.timeStep * 1e-6F;
+  updateImuAttitudeEstimate( timeStep );
+
   switch( kafenv.u.flightMode ) {
     case CALIBRATION_MODE : {
       memset( &kafenv.u.stateEstimate, 0, sizeof( kafenv.u.stateEstimate ) );
@@ -47,8 +74,6 @@ void controlsStep() {
       //wip
     }
     case POS_SETPOINT_MODE : {
-      //wip state estimate goes here
-      float timeStep = kafenv.f.timeStep * 1e-6F;
       KF_VEC3( i, kafenv.s.cascadeSetpoint[i] = kaf_pidstep( &( kafenv.s.positionPID[i] ), kafenv.s.posSetpoint[i],     kafenv.u.stateEstimate.x.f[i], timeStep ) );
       KF_VEC3( i, kafenv.s.cascadeSetpoint[i] = kaf_pidstep( &( kafenv.s.velocityPID[i] ), kafenv.s.cascadeSetpoint[i], kafenv.u.stateEstimate.v.f[i], timeStep ) );
       //wip convert to attitude

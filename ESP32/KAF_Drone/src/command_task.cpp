@@ -4,7 +4,7 @@
 #if ALT_DEFINE
 #include "altdef.h"
 #else
-#include <string.h>
+#include <cstring>
 #endif
 
 void communicationRespond() {
@@ -71,6 +71,13 @@ void communicationRespond() {
       kafenv.c.tx.data.messageType = COM_REPLY_ATT;
       kafenv.c.tx.data.coord = kafenv.u.stateEstimate.t;
       kafenv.n.replySize = sizeof( kafenv.c.tx.data.coord );
+      break;
+    }
+    case COM_REQUEST_SENSORS : {
+      kafenv.c.tx.data.messageType = COM_REPLY_SENSORS;
+      memcpy( kafenv.c.tx.data.bytes, &kafenv.f.accelInput, sizeof( coordinate ) );
+      memcpy( kafenv.c.tx.data.bytes + sizeof( coordinate ), &kafenv.f.gyroInput, sizeof( coordinate ) );
+      kafenv.n.replySize = sizeof( coordinate ) * 2;
       break;
     }
     case COM_REQUEST_GLOBAL : {

@@ -43,15 +43,17 @@ class StubPoseProvider(PoseProvider):
 
 class Esp32PoseProvider(PoseProvider):
     """
-    Request drone position from ESP32 over TCP.
+    Request drone state from ESP32 over TCP.
 
-    Sends COM_REQUEST_POS (0x63) and parses COM_REPLY_POS (0x23) coordinate payload.
-    Attitude is not yet available from this message — identity quaternion is used.
+    Uses COM_REQUEST_ST_EST when available, falls back to COM_REQUEST_POS.
     """
 
     COM_REQUEST_POS = 0x63
     COM_REPLY_POS = 0x23
+    COM_REQUEST_ST_EST = 0x61
+    COM_REPLY_ST_EST = 0x21
     APP_DEVICE_ID = 0x47
+    STATE_SIZE = 64
 
     def __init__(
         self,
@@ -70,27 +72,36 @@ class Esp32PoseProvider(PoseProvider):
             quaternion=np.array([0.0, 0.0, 0.0, 1.0], dtype=np.float64),
         )
 
-    def get_pose(self, timestamp: float) -> PoseEstimate:
-        packet = bytes(
-            [
-                self.drone_id,
-                self.APP_DEVICE_ID,
-                self.COM_REQUEST_POS,
-                int(timestamp * 1000) & 0xFF,
-            ]
-        )
+    def _exchange(self, packet: bytes) -> bytes | None:
         try:
             with socket.create_connection((self.host, self.port), timeout=self.timeout_s) as sock:
                 sock.sendall(packet)
                 sock.settimeout(self.timeout_s)
-                response = sock.recv(32)
+                return sock.recv(128)
         except OSError:
+            return None
+
+    def _header(self, message_type: int) -> bytes:
+        return bytes([self.drone_id, self.APP_DEVICE_ID, message_type, 0])
+
+    def get_pose(self, timestamp: float) -> PoseEstimate:
+        from scipy.spatial.transform import Rotation as R
+
+        response = self._exchange(self._header(self.COM_REQUEST_ST_EST))
+        if response is not None and len(response) >= 4 + self.STATE_SIZE and response[2] == self.COM_REPLY_ST_EST:
+            floats = struct.unpack("<16f", response[4 : 4 + self.STATE_SIZE])
+            position = np.array(floats[0:3], dtype=np.float64)
+            euler = np.array(floats[8:11], dtype=np.float64)  # yaw, pitch, roll
+            quaternion = R.from_euler("zyx", euler).as_quat()
+            self._last_pose = PoseEstimate(
+                timestamp=timestamp,
+                position=position,
+                quaternion=quaternion,
+            )
             return self._last_pose
 
-        if len(response) < 20:
-            return self._last_pose
-
-        if response[2] != self.COM_REPLY_POS:
+        response = self._exchange(self._header(self.COM_REQUEST_POS))
+        if response is None or len(response) < 20 or response[2] != self.COM_REPLY_POS:
             return self._last_pose
 
         x, y, z, _stdev = struct.unpack_from("<4f", response, 4)
@@ -103,6 +114,23 @@ class Esp32PoseProvider(PoseProvider):
 
 
 def create_pose_provider(config: PipelineConfig) -> PoseProvider:
+    if config.pose_source == PoseSource.FUSED:
+        from localization.fused_pose_provider import FusedPoseProvider
+
+        fx = 700.0
+        if config.stereo_fx is not None:
+            fx = float(config.stereo_fx)
+        return FusedPoseProvider(
+            host=config.esp32_host,
+            port=config.esp32_port,
+            drone_id=config.esp32_drone_id,
+            launch_position=config.launch_position,
+            launch_quaternion=config.launch_quaternion,
+            fx=fx,
+            vo_altitude_m=config.vo_altitude_m,
+            push_interval_s=config.pose_push_interval_s,
+            tag_correction_gain=config.tag_correction_gain,
+        )
     if config.pose_source == PoseSource.ESP32:
         return Esp32PoseProvider(
             host=config.esp32_host,

@@ -162,6 +162,16 @@ class PerceptionPipeline:
             if fused is None:
                 continue
 
+            if (
+                fused.observation_count > 1
+                and hasattr(self.pose_provider, "apply_tag_correction")
+            ):
+                self.pose_provider.apply_tag_correction(
+                    world_position,
+                    fused.world_position,
+                    detection.confidence,
+                )
+
             self.voxel_map.add_mine_world(
                 float(fused.world_position[0]),
                 float(fused.world_position[1]),
@@ -231,10 +241,18 @@ class PerceptionPipeline:
     ) -> None:
         fps = frame_count / elapsed if elapsed > 0 else 0.0
         obstacle_count = 0 if self.obstacle_registry is None else len(self.obstacle_registry.obstacles)
+        pose_extra = ""
+        if hasattr(self.pose_provider, "stats"):
+            stats = self.pose_provider.stats
+            pos = stats["position"]
+            pose_extra = (
+                f" pose=({pos[0]:.1f},{pos[1]:.1f},{pos[2]:.1f})"
+                f" corrections={stats.get('correction_count', 0)}"
+            )
         line = (
             f"frames={frame_count} elapsed={elapsed:.1f}s fps={fps:.1f} "
             f"last_detect_ms={detect_ms:.1f} mines={len(self.mine_registry.mines)} "
-            f"obstacles={obstacle_count}"
+            f"obstacles={obstacle_count}{pose_extra}"
         )
         print(f"[stats] {line}")
         if self.config.enable_stats_log:
@@ -301,6 +319,9 @@ class PerceptionPipeline:
                     left = right = None
                     mine_frame = frame
 
+                if hasattr(self.pose_provider, "update_frame"):
+                    self.pose_provider.update_frame(mine_frame, timestamp=timestamp)
+
                 mine_detections = self.detector.detect(mine_frame, timestamp=timestamp)
                 fused_mines = self.process_mine_detections(mine_detections, timestamp)
 
@@ -349,6 +370,8 @@ class PerceptionPipeline:
                     self._save_maps()
         finally:
             self.camera.release()
+            if hasattr(self.pose_provider, "close"):
+                self.pose_provider.close()
             if self.config.enable_visualization:
                 cv2.destroyAllWindows()
             if self.csv_logger is not None:
@@ -390,7 +413,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--visualize", action="store_true")
     parser.add_argument("--headless", action="store_true")
     parser.add_argument("--no-csv", action="store_true")
-    parser.add_argument("--pose-source", choices=["stub", "esp32"], default=None)
+    parser.add_argument("--pose-source", choices=["stub", "esp32", "fused"], default=None)
     parser.add_argument("--esp32-host", type=str, default=None)
     parser.add_argument("--calib", type=Path, default=None)
     parser.add_argument("--enable-obstacles", action="store_true")

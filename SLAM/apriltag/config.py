@@ -15,6 +15,7 @@ DEFAULT_CONFIG_FILE = REPO_ROOT / "SLAM" / "pipeline_config.json"
 class PoseSource(str, Enum):
     STUB = "stub"
     ESP32 = "esp32"
+    FUSED = "fused"
 
 
 @dataclass
@@ -84,6 +85,17 @@ class PipelineConfig:
         default_factory=lambda: REPO_ROOT / "SLAM" / "shared_obstacle_map.json"
     )
 
+    # Fused localization (Pi IMU + VO → COM_SET_ST_EST)
+    launch_position: np.ndarray = field(
+        default_factory=lambda: np.array([0.0, 0.0, 1.5], dtype=np.float64)
+    )
+    launch_quaternion: np.ndarray = field(
+        default_factory=lambda: np.array([0.0, 0.0, 0.0, 1.0], dtype=np.float64)
+    )
+    vo_altitude_m: float = 1.5
+    pose_push_interval_s: float = 0.1
+    tag_correction_gain: float = 0.25
+
     @classmethod
     def from_json(cls, path: Path | None = None) -> "PipelineConfig":
         path = path or DEFAULT_CONFIG_FILE
@@ -135,6 +147,16 @@ class PipelineConfig:
             cfg.stub_drone_quaternion = np.array(
                 stub.get("quaternion_xyzw", [0, 0, 0, 1]), dtype=np.float64
             )
+
+        if "localization" in data:
+            loc = data["localization"]
+            for key in ("vo_altitude_m", "pose_push_interval_s", "tag_correction_gain"):
+                if key in loc:
+                    setattr(cfg, key, loc[key])
+            if "launch_position_m" in loc:
+                cfg.launch_position = np.array(loc["launch_position_m"], dtype=np.float64)
+            if "launch_quaternion_xyzw" in loc:
+                cfg.launch_quaternion = np.array(loc["launch_quaternion_xyzw"], dtype=np.float64)
 
         if "calib_file" in data:
             cfg.calib_file = Path(data["calib_file"])

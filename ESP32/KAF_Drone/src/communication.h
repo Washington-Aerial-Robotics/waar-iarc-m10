@@ -50,6 +50,8 @@
 #define COM_SET_ATT         ( COM_CMD | 0x24 )//coord,COM_SUCCESS,
 #define COM_REQUEST_ATT     ( COM_CMD | 0x25 )//setFwdSend,COM_REPLY_ATT,
 #define COM_REPLY_ATT       (       0 | 0x25 )//coord,,
+#define COM_REQUEST_SENSORS ( COM_CMD | 0x26 )//,COM_REPLY_SENSORS,
+#define COM_REPLY_SENSORS   (       0 | 0x26 )//accel+gyro,,
 //28-2F flight software algortihm commands
 #define COM_SET_CTRL_MODE   ( COM_CMD | 0x28 )//byte,COM_SUCCESS,
 #define COM_SET_MOTOR_CMD   ( COM_CMD | 0x29 )//coord,COM_SUCCESS,
