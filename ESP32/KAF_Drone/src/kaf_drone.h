@@ -108,6 +108,7 @@ struct global_variables {
     float motorSetpoint[MOTOR_COUNT];               //
     float posSetpoint[3] = { 0, 0, 0 };             //
     float cascadeSetpoint[3];                       //
+    unsigned long lastPilotMotorCmdMs = 0;          // COM_SET_MOTOR_CMD (GS safety pilot)
     pid positionPID[3];                             //
     pid velocityPID[3];                             //
     pid attitudePID[3];                             //

@@ -256,6 +256,7 @@ void communicationRecord() {
       }
       case COM_SET_MOTOR_CMD : {
         kafenv.u.flightMode = MOTOR_SETPOINT_MODE;
+        kafenv.s.lastPilotMotorCmdMs = kafenv.n.currentTime;
         KF_VECN( i, 4, kafenv.s.motorSetpoint[i] = kafenv.c.rx.data.coord.f[i] );
         break;
       }

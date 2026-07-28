@@ -1,5 +1,6 @@
 #include "kaf_drone.h"
 #include "communication.h"
+#include "inter_drone_avoidance.h"
 
 #if ALT_DEFINE
 #include "altdef.h"
@@ -82,6 +83,7 @@ void controlsStep() {
       //wip convert to motor cmd
     }
     case MOTOR_SETPOINT_MODE : {
+      applyInterDroneHardSeparation();
       KF_VECN( i, MOTOR_COUNT, kafenv.f.motorOutput[i] = kafenv.s.motorSetpoint[i] );
       break;
     }
