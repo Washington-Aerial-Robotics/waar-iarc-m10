@@ -9,7 +9,7 @@ class SparseVoxelMap:
     HAZARD   = 2
     INFLATED = 3
 
-    def __init__(self, origin_row, resolution=0.2, clearance=0.3, field_x=94, field_y=12):
+    def __init__(self, origin_row, resolution=0.2, clearance=0.3, field_x=91.44, field_y=24.38):
 
         self.resolution = resolution
         self.clearance = clearance
@@ -78,7 +78,7 @@ class SparseVoxelMap:
         height_m: float = 2.0,
         radius_m: float = 0.3,
     ) -> None:
-        """Mark a fused obstacle permanently in the 3D map (trees, poles, etc.)."""
+        """Mark a permanent obstacle voxel in the 3D map (for future SLAM occupancy)."""
         half_h = max(self.resolution, height_m / 2.0)
         z_layers = max(1, int(np.ceil(half_h / self.resolution)))
         for dz in range(-z_layers, z_layers + 1):
@@ -160,7 +160,7 @@ class SparseVoxelMap:
 
         ax1.imshow(proj, origin="lower", interpolation="nearest",
                    extent=[0, max_x, 0, max_y])
-        ax1.set_title("3D Obstacle Map (drone flight — trees/obstacles)")
+        ax1.set_title("3D obstacle layer (SLAM / occupancy — future)")
         ax1.set_xlabel("x (meters)")
         ax1.set_ylabel("y (meters)")
 

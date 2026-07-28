@@ -10,8 +10,8 @@
   "enable_csv_log": true,
   "use_rmse_confidence": true,
   "use_kalman_fusion": true,
-  "field_x": 94.0,
-  "field_y": 12.0,
+  "field_x": 91.44,
+  "field_y": 24.38,
   "map_resolution": 0.2,
   "pose_source": "stub",
   "esp32_host": "192.168.1.100",
@@ -25,8 +25,17 @@
     "position_m": [0.0, 0.0, 1.5],
     "quaternion_xyzw": [0.0, 0.0, 0.0, 1.0]
   },
-  "obstacles": {
-    "enabled": false,
-    "camera_mode": "mono"
+  "mine_shape": {
+    "enable_shape_detection": true,
+    "min_shape_confidence": 0.35,
+    "template_path": "SLAM/mine_shape/templates/pfm1_silhouette.png",
+    "pfm_physical_span_m": 0.12,
+    "shape_max_match_distance": 0.45,
+    "shape_dedupe_radius_m": 0.5,
+    "shape_fusion_radius_m": 0.5,
+    "shape_canny_low": 40,
+    "shape_canny_high": 120,
+    "shape_min_contour_area_px": 400,
+    "shape_max_contour_area_px": 80000
   }
 }

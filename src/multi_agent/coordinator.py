@@ -72,8 +72,8 @@ class MultiAgentCoordinator:
             CollisionAvoidance()
         )
 
-        self.field_x_m = 94.0
-        self.field_y_m = 12.0
+        self.field_x_m = 91.44
+        self.field_y_m = 24.38
         self.external_min_confidence = 0.1
         self.external_obstacles: list[dict] = []
 

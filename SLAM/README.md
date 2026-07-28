@@ -2,7 +2,7 @@
 
 Branch: **`erim/perception`**
 
-Unified perception stack for IARC Mission 10: AprilTag mine detection, obstacle mapping, and onboard localization. Runs on the Pi (mono USB cam) or a stereo camera setup.
+Unified perception stack for IARC Mission 10: **AprilTag mine detection** and onboard localization. Optional side-by-side stereo camera uses the **left eye** for tags. **Drone flight obstacles** will come from SLAM/occupancy (not YOLO).
 
 ---
 
@@ -20,13 +20,13 @@ Requires:
 - ESP32 on WiFi with **updated firmware** (see Firmware section)
 - `esp32_host` set in `SLAM/pipeline_config.pi.json`
 
-### Stereo — mines + trees/obstacles
+### Stereo camera (side-by-side)
 
 ```bash
 bash SLAM/scripts/run_stereo.sh
 ```
 
-Uses `pipeline_config.stereo.json` (2560×720 side-by-side cam, obstacles enabled).
+Uses `pipeline_config.stereo.json` (2560×720; left eye for AprilTags).
 
 ### Offline localization test (no hardware)
 
@@ -42,12 +42,14 @@ python scripts/test_localization_offline.py
 ```
 Camera frame
     │
-    ├─► AprilTag detector ──► mine world position ──► 2D mine map (human path)
+    ├─► AprilTag detector ──► tag-confirmed mines ──► 2D mine map (human path)
     │
-    ├─► Obstacle detector (stereo only) ──► tree/obstacle voxels ──► 3D flight map
+    ├─► PFM-1 shape detector (classical) ──► shape-only candidates (pending tag)
     │
     └─► Visual odometry + ESP32 IMU ──► fused pose ──► COM_SET_ST_EST ──► ESP32
 ```
+
+(3D obstacle occupancy for drone nav is planned via SLAM on `SparseVoxelMap.permanent_obstacle_voxels`, not a separate YOLO pipeline.)
 
 ### Mine detection (AprilTags)
 
@@ -57,16 +59,21 @@ Camera frame
 - Writes to **2D permanent mine layer** on the shared map
 - Output: `mine_detections.csv`, right panel of `occ_grid_proj.png`
 
-### Obstacle detection (trees, stereo cam)
+### Mine detection (PFM-1 shape, classical)
 
-- YOLO + stereo depth (or depth-cluster fallback)
-- Targets configurable classes (default `"tree"`) — needs custom YOLO weights for real tree labels
-- Fuses obstacles by proximity in world space
-- Writes to **3D permanent obstacle layer** (separate from mines — not used for human path)
-- Multi-drone sharing via `shared_obstacle_map.json`
-- **Requires stereo camera** — mono Pi cam cannot do depth obstacles
+- Parallel branch: Canny contours + `cv2.matchShapes` vs template silhouette (no ML)
+- Metric XY via known span + pinhole (`mine_shape/geometry.py`, same transform chain as tags)
+- **Tag wins:** shape hits near a decoded tag are dropped; tag fixes remove nearby shape-only registry entries
+- Shape-only mines live in `ShapeMineRegistry` (`source="shape"`, negative `shape_id`)
+- **Requires** `SLAM/mine_shape/templates/pfm1_silhouette.png` (see `templates/README.md`); until then the branch stays idle
+- Tunables: `mine_shape` block in `pipeline_config*.json` (`min_shape_confidence`, `pfm_physical_span_m`, etc.)
 
-### Localization (new)
+### Obstacle layer (future SLAM)
+
+- `SparseVoxelMap` still has a **3D permanent obstacle voxel layer** for drone flight
+- Populated by future SLAM/occupancy — **not** by the removed YOLO/tree detector
+
+### Localization
 
 The ESP32 previously returned `(0,0,0)` for position because state estimation was never implemented. The Pi now runs onboard fusion and **pushes pose to the ESP32** via `COM_SET_ST_EST`.
 
@@ -84,7 +91,7 @@ The ESP32 previously returned `(0,0,0)` for position because state estimation wa
 2. Pi runs optical-flow VO on camera frame
 3. `PoseFusion` updates position + attitude
 4. Pi pushes fused state to ESP32 (`COM_SET_ST_EST`) every ~100ms
-5. Mine/obstacle detections use fused pose for world coordinates
+5. Mine detections use fused pose for world coordinates
 
 ---
 
@@ -95,9 +102,9 @@ One world coordinate system (meters), two layers in `SparseVoxelMap`:
 | Layer | Storage | Used for |
 |-------|---------|----------|
 | **Mines** | 2D `permanent_cells` | Human path planning |
-| **Obstacles** | 3D `permanent_obstacle_voxels` | Drone flight avoidance |
+| **Obstacles** | 3D `permanent_obstacle_voxels` | Drone flight (SLAM — future) |
 
-Field default: **94 m × 12 m**, cell size **0.2 m**.
+Field default: **91.44 m × 24.38 m** (300 ft × 80 ft), cell size **0.2 m**.
 
 Visualization: `occ_grid_proj.png`
 - Left = 3D obstacles (drone nav)
@@ -111,9 +118,9 @@ Visualization: `occ_grid_proj.png`
 
 | File | Use case |
 |------|----------|
-| `pipeline_config.json` | Laptop dev, mono, obstacles off |
+| `pipeline_config.json` | Laptop dev, mono |
 | `pipeline_config.pi.json` | Pi deployment, fused pose |
-| `pipeline_config.stereo.json` | Stereo cam, mines + obstacles |
+| `pipeline_config.stereo.json` | Side-by-side stereo cam |
 
 ### Pose sources (`pose_source`)
 
@@ -181,8 +188,6 @@ Without updated firmware, fused localization cannot read IMU data.
 |------|----------|
 | `mine_detections.csv` | Per-detection log |
 | `pipeline_stats.log` | FPS, mine count, pose, corrections |
-| `obstacle_map.json` | Fused obstacle positions |
-| `shared_obstacle_map.json` | Multi-drone obstacle sharing |
 | `occ_grid_proj.png` | Map visualization |
 | `occ_grid_2d.npy` / `occ_grid_3d.npy` | Raw grid arrays |
 
@@ -203,7 +208,7 @@ python SLAM/mine_detection_pipeline.py \
 | `--pose-source fused` | Enable onboard localization |
 | `--pose-source stub` | Fixed test pose |
 | `--pose-source esp32` | Read pose from ESP32 only |
-| `--stereo` | Enable stereo mode + obstacles |
+| `--stereo` | Side-by-side stereo; AprilTags on left eye |
 | `--headless` | No display (auto on Pi without monitor) |
 | `--visualize` | Show detection overlay |
 
@@ -230,9 +235,9 @@ python SLAM/mine_detection_pipeline.py \
 ```
 SLAM/
 ├── mine_detection_pipeline.py   # Main entry (PerceptionPipeline)
-├── sparse_voxel_map.py          # Shared map (mines + obstacles)
-├── apriltag/                    # AprilTag detection + mine fusion
-├── obstacle/                    # Stereo YOLO/depth obstacle detection
+├── sparse_voxel_map.py          # Map (2D mines + 3D obstacle layer for SLAM)
+├── apriltag/                    # AprilTag detection + mine fusion + stereo split
+├── mine_shape/                  # Classical PFM-1 silhouette detector + shape registry
 ├── localization/                # IMU + VO fusion + ESP32 comms
 │   ├── esp32_comms.py           # TCP protocol (SET_ST_EST, sensors)
 │   ├── imu.py                   # Attitude filter
@@ -253,7 +258,7 @@ SLAM/
 ## What still needs work
 
 - [ ] Field-test fused localization on real drone + measure drift
-- [ ] Custom YOLO weights for tree class (default `yolov8n` has no "tree")
+- [ ] SLAM-based 3D obstacle / occupancy mapping for drone flight
 - [ ] Human path planner reading 2D mine map
 - [ ] Flutter ground station mine map display
 - [ ] UWB inter-drone ranging for map sharing (firmware has ranging, no fusion yet)

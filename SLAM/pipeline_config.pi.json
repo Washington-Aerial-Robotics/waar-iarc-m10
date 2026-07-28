@@ -13,8 +13,8 @@
   "enable_stats_log": true,
   "stats_interval_s": 5.0,
   "map_save_interval_frames": 150,
-  "field_x": 94.0,
-  "field_y": 12.0,
+  "field_x": 91.44,
+  "field_y": 24.38,
   "map_resolution": 0.2,
   "pose_source": "fused",
   "esp32_host": "192.168.1.100",
@@ -35,8 +35,10 @@
     "pose_push_interval_s": 0.1,
     "tag_correction_gain": 0.25
   },
-  "obstacles": {
-    "enabled": false,
-    "camera_mode": "mono"
+  "mine_shape": {
+    "enable_shape_detection": true,
+    "min_shape_confidence": 0.35,
+    "template_path": "SLAM/mine_shape/templates/pfm1_silhouette.png",
+    "pfm_physical_span_m": 0.12
   }
 }

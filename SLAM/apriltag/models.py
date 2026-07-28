@@ -34,12 +34,14 @@ class PoseEstimate:
 
 @dataclass
 class FusedMine:
-    """Fused world estimate for one mine (tag)."""
+    """Fused world estimate for one mine (AprilTag and/or shape)."""
 
-    tag_id: int
+    tag_id: int | None
     first_seen: float
     last_seen: float
     observation_count: int
     world_position: np.ndarray
     confidence: float
     world_rotation: np.ndarray | None = field(default=None)
+    source: str = "tag"  # "tag" | "shape"
+    shape_id: int | None = None

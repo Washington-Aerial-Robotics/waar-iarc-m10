@@ -40,8 +40,8 @@ class PipelineConfig:
     csv_log_file: Path = field(default_factory=lambda: REPO_ROOT / "SLAM" / "mine_detections.csv")
     stats_log_file: Path = field(default_factory=lambda: REPO_ROOT / "SLAM" / "pipeline_stats.log")
 
-    field_x: float = 94.0
-    field_y: float = 12.0
+    field_x: float = 91.44
+    field_y: float = 24.38
     map_resolution: float = 0.2
 
     pose_source: PoseSource = PoseSource.STUB
@@ -63,27 +63,9 @@ class PipelineConfig:
         default_factory=lambda: np.array([0.0, 0.0, 0.0, 1.0], dtype=np.float64)
     )
 
-    # Obstacle / tree detection (stereo camera required)
-    enable_obstacles: bool = False
-    camera_mode: str = "mono"  # "mono" | "stereo"
-    obstacle_model: str = "yolov8n.pt"
-    obstacle_classes: list[str] = field(default_factory=lambda: ["tree"])
-    obstacle_min_confidence: float = 0.25
-    obstacle_detection_mode: str = "both"  # "yolo" | "depth" | "both"
-    obstacle_fusion_radius_m: float = 1.0
-    obstacle_use_kalman: bool = True
-    obstacle_min_depth_m: float = 0.5
-    obstacle_max_depth_m: float = 8.0
-    obstacle_default_height_m: float = 2.5
-    obstacle_default_radius_m: float = 0.35
+    camera_mode: str = "mono"  # "mono" | "stereo" (side-by-side; left eye for tags)
     stereo_baseline_m: float = 0.06
     stereo_fx: float | None = None
-    obstacle_map_file: Path = field(
-        default_factory=lambda: REPO_ROOT / "SLAM" / "obstacle_map.json"
-    )
-    shared_obstacle_map_file: Path = field(
-        default_factory=lambda: REPO_ROOT / "SLAM" / "shared_obstacle_map.json"
-    )
 
     # Fused localization (Pi IMU + VO → COM_SET_ST_EST)
     launch_position: np.ndarray = field(
@@ -95,6 +77,20 @@ class PipelineConfig:
     vo_altitude_m: float = 1.5
     pose_push_interval_s: float = 0.1
     tag_correction_gain: float = 0.25
+
+    # Classical PFM-1 shape branch (parallel to AprilTags)
+    enable_shape_detection: bool = True
+    min_shape_confidence: float = 0.35
+    shape_template_path: Path | None = None
+    pfm_physical_span_m: float = 0.12  # TODO: confirm wing span from IARC Resource Addendum
+    shape_max_match_distance: float = 0.45
+    shape_dedupe_radius_m: float = 0.5
+    shape_fusion_radius_m: float = 0.5
+    shape_canny_low: int = 40
+    shape_canny_high: int = 120
+    shape_min_contour_area_px: float = 400.0
+    shape_max_contour_area_px: float = 80000.0
+    ground_z_m: float = 0.0
 
     @classmethod
     def from_json(cls, path: Path | None = None) -> "PipelineConfig":
@@ -124,6 +120,9 @@ class PipelineConfig:
             "field_x",
             "field_y",
             "map_resolution",
+            "camera_mode",
+            "stereo_baseline_m",
+            "stereo_fx",
             "esp32_host",
             "esp32_port",
             "esp32_drone_id",
@@ -169,47 +168,35 @@ class PipelineConfig:
         if "stats_log_file" in data:
             cfg.stats_log_file = Path(data["stats_log_file"])
 
-        if "obstacles" in data:
+        # Legacy configs used an "obstacles" block only for camera_mode
+        if "obstacles" in data and "camera_mode" in data["obstacles"]:
+            cfg.camera_mode = data["obstacles"]["camera_mode"]
             obs = data["obstacles"]
-            for key in (
-                "enabled",
-                "camera_mode",
-                "model",
-                "min_confidence",
-                "detection_mode",
-                "fusion_radius_m",
-                "use_kalman",
-                "min_depth_m",
-                "max_depth_m",
-                "default_height_m",
-                "default_radius_m",
-                "stereo_baseline_m",
-                "stereo_fx",
-            ):
-                mapped = {
-                    "enabled": "enable_obstacles",
-                    "model": "obstacle_model",
-                    "min_confidence": "obstacle_min_confidence",
-                    "detection_mode": "obstacle_detection_mode",
-                    "fusion_radius_m": "obstacle_fusion_radius_m",
-                    "use_kalman": "obstacle_use_kalman",
-                    "min_depth_m": "obstacle_min_depth_m",
-                    "max_depth_m": "obstacle_max_depth_m",
-                    "default_height_m": "obstacle_default_height_m",
-                    "default_radius_m": "obstacle_default_radius_m",
-                }.get(key, key)
-                if key in obs:
-                    setattr(cfg, mapped, obs[key])
-            if "target_classes" in obs:
-                cfg.obstacle_classes = list(obs["target_classes"])
-            if "map_file" in obs:
-                cfg.obstacle_map_file = Path(obs["map_file"])
-            if "shared_map_file" in obs:
-                cfg.shared_obstacle_map_file = Path(obs["shared_map_file"])
+            if "stereo_baseline_m" in obs:
+                cfg.stereo_baseline_m = obs["stereo_baseline_m"]
+            if "stereo_fx" in obs:
+                cfg.stereo_fx = obs["stereo_fx"]
 
-        for path_key in ("obstacle_map_file", "shared_obstacle_map_file"):
-            path_val = getattr(cfg, path_key)
-            if not path_val.is_absolute():
-                setattr(cfg, path_key, REPO_ROOT / path_val)
+        if "mine_shape" in data:
+            ms = data["mine_shape"]
+            for key in (
+                "enable_shape_detection",
+                "min_shape_confidence",
+                "pfm_physical_span_m",
+                "shape_max_match_distance",
+                "shape_dedupe_radius_m",
+                "shape_fusion_radius_m",
+                "shape_canny_low",
+                "shape_canny_high",
+                "shape_min_contour_area_px",
+                "shape_max_contour_area_px",
+                "ground_z_m",
+            ):
+                if key in ms:
+                    setattr(cfg, key, ms[key])
+            if "template_path" in ms and ms["template_path"]:
+                cfg.shape_template_path = Path(ms["template_path"])
+                if not cfg.shape_template_path.is_absolute():
+                    cfg.shape_template_path = REPO_ROOT / cfg.shape_template_path
 
         return cfg

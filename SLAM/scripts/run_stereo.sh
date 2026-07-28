@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run perception pipeline with stereo camera + obstacle (tree) detection.
+# Run perception pipeline with side-by-side stereo camera (left eye for AprilTags).
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"

@@ -123,7 +123,7 @@ def main():
     print(f"\nSelected camera index: {idx}  ({w}x{h}, {mode} mode)")
     if mode == "forced":
         print("This camera needs MJPG fourcc + a 2560x720 request to reach its full")
-        print("stereo resolution — stereo_depth.py's camera init needs those cap.set()")
+        print("stereo resolution — use pipeline_config.stereo.json or --stereo")
         print("calls restored (they were removed in an earlier version).")
     else:
         print("This camera reports the stereo resolution by default — no cap.set()")

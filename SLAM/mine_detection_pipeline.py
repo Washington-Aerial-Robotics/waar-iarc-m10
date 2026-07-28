@@ -7,7 +7,6 @@ import time
 from pathlib import Path
 
 import cv2
-import numpy as np
 
 SLAM_DIR = Path(__file__).resolve().parent
 if str(SLAM_DIR) not in sys.path:
@@ -24,21 +23,20 @@ from apriltag import (  # noqa: E402
     homogeneous_from_pose,
     is_headless,
     load_calibration,
+    split_stereo_frame,
     tag_pose_to_world,
 )
-from obstacle import (  # noqa: E402
-    ObstacleDetector,
-    ObstacleRegistry,
-    camera_points_to_world,
-    export_obstacle_map,
-    import_obstacle_map,
-    split_stereo_frame,
+from mine_shape import (  # noqa: E402
+    ShapeMineDetector,
+    ShapeMineRegistry,
+    filter_shapes_away_from_tags,
+    remove_shapes_near_tag_world,
 )
 from sparse_voxel_map import SparseVoxelMap  # noqa: E402
 
 
 class PerceptionPipeline:
-    """Unified mine (AprilTag) + obstacle (tree/stereo) perception pipeline."""
+    """AprilTag + classical PFM-1 shape mine detection, mapping, and localization."""
 
     def __init__(self, config: PipelineConfig | None = None):
         self.config = config or PipelineConfig.from_json()
@@ -47,9 +45,8 @@ class PerceptionPipeline:
             self.config.enable_visualization = False
 
         self.calibration = load_calibration(self.config.calib_file)
-        fx, fy, cx, cy = self.calibration.camera_params
-        if self.config.stereo_fx is not None:
-            fx = float(self.config.stereo_fx)
+        if self.config.stereo_fx is not None and self.config.camera_mode == "stereo":
+            pass  # reserved for future stereo depth / SLAM obstacle layer
 
         self.detector = AprilTagDetector(
             calibration=self.calibration,
@@ -67,34 +64,31 @@ class PerceptionPipeline:
             min_confidence=self.config.min_confidence,
             use_kalman=self.config.use_kalman_fusion,
         )
-        self.obstacle_registry: ObstacleRegistry | None = None
-        self.obstacle_detector: ObstacleDetector | None = None
-        if self.config.enable_obstacles and self.config.camera_mode == "stereo":
-            self.obstacle_registry = ObstacleRegistry(
-                fusion_radius_m=self.config.obstacle_fusion_radius_m,
-                min_confidence=self.config.obstacle_min_confidence,
-                use_kalman=self.config.obstacle_use_kalman,
+        self.shape_registry = ShapeMineRegistry(
+            min_confidence=self.config.min_shape_confidence,
+            fusion_radius_m=self.config.shape_fusion_radius_m,
+            use_kalman=self.config.use_kalman_fusion,
+        )
+        self.shape_detector: ShapeMineDetector | None = None
+        if self.config.enable_shape_detection:
+            self.shape_detector = ShapeMineDetector(
+                calibration=self.calibration,
+                template_path=self.config.shape_template_path,
+                physical_span_m=self.config.pfm_physical_span_m,
+                min_shape_confidence=self.config.min_shape_confidence,
+                max_match_distance=self.config.shape_max_match_distance,
+                min_contour_area_px=self.config.shape_min_contour_area_px,
+                max_contour_area_px=self.config.shape_max_contour_area_px,
+                canny_low=self.config.shape_canny_low,
+                canny_high=self.config.shape_canny_high,
+                ground_z_m=self.config.ground_z_m,
+                world_drone_transform_provider=self.pose_provider.world_drone_transform,
+                drone_camera_transform=self.drone_camera_transform,
             )
-            self.obstacle_detector = ObstacleDetector(
-                fx=fx,
-                fy=fy,
-                cx=cx,
-                cy=cy,
-                baseline_m=self.config.stereo_baseline_m,
-                model_path=self.config.obstacle_model,
-                target_classes=self.config.obstacle_classes,
-                min_confidence=self.config.obstacle_min_confidence,
-                min_depth_m=self.config.obstacle_min_depth_m,
-                max_depth_m=self.config.obstacle_max_depth_m,
-                detection_mode=self.config.obstacle_detection_mode,
-            )
-            if self.config.shared_obstacle_map_file.exists():
-                merged = import_obstacle_map(
-                    self.obstacle_registry, self.config.shared_obstacle_map_file
-                )
-                print(f"Loaded {merged} shared obstacles from {self.config.shared_obstacle_map_file}")
-        elif self.config.enable_obstacles:
-            print("Warning: obstacles enabled but camera_mode is not 'stereo' — obstacle detection disabled.")
+            if self.shape_detector.template_ready:
+                print("[mine_shape] PFM-1 template loaded — shape branch enabled")
+            else:
+                print("[mine_shape] no template — shape branch idle (AprilTags only)")
 
         self.voxel_map = SparseVoxelMap(
             {"x": 0.0, "y": 0.0, "z": 0.0},
@@ -102,7 +96,6 @@ class PerceptionPipeline:
             field_x=self.config.field_x,
             field_y=self.config.field_y,
         )
-        self._sync_obstacles_to_map()
 
         self.camera = CameraSource(
             camera_index=self.config.camera_index,
@@ -118,23 +111,10 @@ class PerceptionPipeline:
         )
         self._running = True
         self._last_world_positions = {}
-        self._last_obstacle_detections = []
+        self._last_shape_candidates = []
 
     def stop(self) -> None:
         self._running = False
-
-    def _sync_obstacles_to_map(self) -> None:
-        if self.obstacle_registry is None:
-            return
-        for obstacle in self.obstacle_registry.obstacles.values():
-            pos = obstacle.world_position
-            self.voxel_map.add_obstacle_world(
-                float(pos[0]),
-                float(pos[1]),
-                float(pos[2]),
-                height_m=obstacle.height_m,
-                radius_m=obstacle.radius_m,
-            )
 
     def process_mine_detections(self, detections, timestamp: float) -> list:
         world_drone = self.pose_provider.world_drone_transform(timestamp)
@@ -162,6 +142,12 @@ class PerceptionPipeline:
             if fused is None:
                 continue
 
+            remove_shapes_near_tag_world(
+                self.shape_registry,
+                world_position,
+                radius_m=self.config.shape_dedupe_radius_m,
+            )
+
             if (
                 fused.observation_count > 1
                 and hasattr(self.pose_provider, "apply_tag_correction")
@@ -184,50 +170,37 @@ class PerceptionPipeline:
         self._last_world_positions = world_positions
         return updated_mines
 
-    def process_obstacle_detections(
-        self,
-        left_bgr: np.ndarray,
-        right_bgr: np.ndarray,
-        timestamp: float,
-    ) -> list:
-        if self.obstacle_detector is None or self.obstacle_registry is None:
+    def _tag_world_positions_for_dedupe(self) -> list:
+        positions = list(self._last_world_positions.values())
+        for mine in self.mine_registry.mines.values():
+            if mine.tag_id is not None:
+                positions.append(mine.world_position)
+        return positions
+
+    def process_shape_detections(self, candidates, timestamp: float) -> list:
+        if not candidates:
+            self._last_shape_candidates = []
             return []
 
-        world_drone = self.pose_provider.world_drone_transform(timestamp)
-        detections = self.obstacle_detector.detect(left_bgr, right_bgr, timestamp=timestamp)
-        self._last_obstacle_detections = detections
+        filtered = filter_shapes_away_from_tags(
+            candidates,
+            self._tag_world_positions_for_dedupe(),
+            radius_m=self.config.shape_dedupe_radius_m,
+        )
+        self._last_shape_candidates = filtered
 
         updated = []
-        for detection in detections:
-            world_corners = camera_points_to_world(
-                detection.corners_camera,
-                world_drone,
-                self.drone_camera_transform,
-            )
-            world_center = world_corners.mean(axis=0)
-            height_m = max(
-                self.config.obstacle_default_height_m,
-                float(detection.depth_far_m - detection.depth_near_m),
-            )
-
-            fused = self.obstacle_registry.update(
-                label=detection.label,
-                world_position=world_center,
-                confidence=detection.confidence,
-                timestamp=timestamp,
-                height_m=height_m,
+        for cand in filtered:
+            fused = self.shape_registry.update(
+                cand.world_position,
+                cand.confidence,
+                timestamp,
             )
             if fused is None:
                 continue
-
-            fused.radius_m = self.config.obstacle_default_radius_m
-            pos = fused.world_position
-            self.voxel_map.add_obstacle_world(
-                float(pos[0]),
-                float(pos[1]),
-                float(pos[2]),
-                height_m=fused.height_m,
-                radius_m=fused.radius_m,
+            self.voxel_map.add_mine_world(
+                float(fused.world_position[0]),
+                float(fused.world_position[1]),
             )
             updated.append(fused)
         return updated
@@ -240,7 +213,6 @@ class PerceptionPipeline:
         detect_ms: float,
     ) -> None:
         fps = frame_count / elapsed if elapsed > 0 else 0.0
-        obstacle_count = 0 if self.obstacle_registry is None else len(self.obstacle_registry.obstacles)
         pose_extra = ""
         if hasattr(self.pose_provider, "stats"):
             stats = self.pose_provider.stats
@@ -251,8 +223,9 @@ class PerceptionPipeline:
             )
         line = (
             f"frames={frame_count} elapsed={elapsed:.1f}s fps={fps:.1f} "
-            f"last_detect_ms={detect_ms:.1f} mines={len(self.mine_registry.mines)} "
-            f"obstacles={obstacle_count}{pose_extra}"
+            f"last_detect_ms={detect_ms:.1f} "
+            f"tag_mines={len(self.mine_registry.mines)} "
+            f"shape_mines={len(self.shape_registry.mines)}{pose_extra}"
         )
         print(f"[stats] {line}")
         if self.config.enable_stats_log:
@@ -260,13 +233,8 @@ class PerceptionPipeline:
                 f.write(f"{time.time():.3f} {line}\n")
 
     def _save_maps(self) -> None:
-        if self.mine_registry.mines or (
-            self.obstacle_registry and self.obstacle_registry.obstacles
-        ):
+        if self.mine_registry.mines or self.shape_registry.mines:
             self.voxel_map.generate_visualization()
-        if self.obstacle_registry is not None:
-            export_obstacle_map(self.obstacle_registry, self.config.obstacle_map_file)
-            export_obstacle_map(self.obstacle_registry, self.config.shared_obstacle_map_file)
 
     def run(self) -> None:
         self.camera.open()
@@ -275,7 +243,6 @@ class PerceptionPipeline:
         print(f"Camera mode: {self.config.camera_mode}")
         print(f"Calibration: {self.config.calib_file}")
         print(f"Pose source: {self.config.pose_source.value}")
-        print(f"Mines: enabled | Obstacles: {self.config.enable_obstacles and self.obstacle_detector is not None}")
         if self.config.enable_visualization:
             print("Press 'q' to quit")
         else:
@@ -313,10 +280,8 @@ class PerceptionPipeline:
                     if stereo is None:
                         print("Expected stereo frame but could not split eyes — skipping frame")
                         continue
-                    left, right, _eye_w = stereo
-                    mine_frame = left
+                    mine_frame, _right, _eye_w = stereo
                 else:
-                    left = right = None
                     mine_frame = frame
 
                 if hasattr(self.pose_provider, "update_frame"):
@@ -325,9 +290,10 @@ class PerceptionPipeline:
                 mine_detections = self.detector.detect(mine_frame, timestamp=timestamp)
                 fused_mines = self.process_mine_detections(mine_detections, timestamp)
 
-                fused_obstacles = []
-                if left is not None and right is not None:
-                    fused_obstacles = self.process_obstacle_detections(left, right, timestamp)
+                fused_shapes = []
+                if self.shape_detector is not None:
+                    shape_candidates = self.shape_detector.detect(mine_frame, timestamp=timestamp)
+                    fused_shapes = self.process_shape_detections(shape_candidates, timestamp)
 
                 last_detect_ms = (time.perf_counter() - t0) * 1000.0
 
@@ -338,12 +304,12 @@ class PerceptionPipeline:
                         f"world=({pos[0]:.2f}, {pos[1]:.2f}, {pos[2]:.2f}) "
                         f"conf={mine.confidence:.2f} obs={mine.observation_count}"
                     )
-                for obstacle in fused_obstacles:
-                    pos = obstacle.world_position
+                for mine in fused_shapes:
+                    pos = mine.world_position
                     print(
-                        f"Obstacle {obstacle.obstacle_id} ({obstacle.label}): "
+                        f"Mine shape {mine.shape_id}: "
                         f"world=({pos[0]:.2f}, {pos[1]:.2f}, {pos[2]:.2f}) "
-                        f"conf={obstacle.confidence:.2f} obs={obstacle.observation_count}"
+                        f"conf={mine.confidence:.2f} obs={mine.observation_count} (pending tag)"
                     )
 
                 if self.config.enable_visualization:
@@ -352,9 +318,10 @@ class PerceptionPipeline:
                         mine_detections,
                         world_positions=self._last_world_positions,
                     )
-                    if self.obstacle_detector is not None:
-                        display = self.obstacle_detector.draw_detections(
-                            display, self._last_obstacle_detections
+                    if self.shape_detector is not None and self._last_shape_candidates:
+                        display = self.shape_detector.draw_candidates(
+                            display,
+                            self._last_shape_candidates,
                         )
                     cv2.imshow("Perception Pipeline", display)
                     if cv2.waitKey(1) & 0xFF == ord("q"):
@@ -377,34 +344,32 @@ class PerceptionPipeline:
             if self.csv_logger is not None:
                 self.csv_logger.close()
 
-        print(f"\nDiscovered mines: {len(self.mine_registry.mines)}")
+        print(f"\nDiscovered tag mines: {len(self.mine_registry.mines)}")
         for tag_id, mine in sorted(self.mine_registry.mines.items()):
             pos = mine.world_position
             print(
                 f"  tag {tag_id}: ({pos[0]:.2f}, {pos[1]:.2f}, {pos[2]:.2f}) "
                 f"observations={mine.observation_count}"
             )
-
-        if self.obstacle_registry is not None:
-            print(f"\nMapped obstacles: {len(self.obstacle_registry.obstacles)}")
-            for obstacle_id, obstacle in sorted(self.obstacle_registry.obstacles.items()):
-                pos = obstacle.world_position
-                print(
-                    f"  id {obstacle_id} ({obstacle.label}): "
-                    f"({pos[0]:.2f}, {pos[1]:.2f}, {pos[2]:.2f}) "
-                    f"observations={obstacle.observation_count}"
-                )
+        print(f"Shape-only candidates: {len(self.shape_registry.mines)}")
+        for shape_id, mine in sorted(self.shape_registry.mines.items()):
+            pos = mine.world_position
+            print(
+                f"  shape {shape_id}: ({pos[0]:.2f}, {pos[1]:.2f}, {pos[2]:.2f}) "
+                f"observations={mine.observation_count} conf={mine.confidence:.2f}"
+            )
 
         self._save_maps()
         print("Saved map visualization to occ_grid_proj.png")
 
 
-# Backward-compatible alias
 MineDetectionPipeline = PerceptionPipeline
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="IARC perception pipeline (mines + obstacles)")
+    parser = argparse.ArgumentParser(
+        description="IARC perception pipeline (AprilTag mines + classical PFM-1 shape)"
+    )
     parser.add_argument("--config", type=Path, default=SLAM_DIR / "pipeline_config.json")
     parser.add_argument("--camera-index", type=int, default=None)
     parser.add_argument("--width", type=int, default=None)
@@ -416,8 +381,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--pose-source", choices=["stub", "esp32", "fused"], default=None)
     parser.add_argument("--esp32-host", type=str, default=None)
     parser.add_argument("--calib", type=Path, default=None)
-    parser.add_argument("--enable-obstacles", action="store_true")
-    parser.add_argument("--stereo", action="store_true", help="Enable stereo camera mode + obstacles")
+    parser.add_argument(
+        "--stereo",
+        action="store_true",
+        help="Side-by-side stereo camera (left eye used for AprilTags)",
+    )
     return parser.parse_args()
 
 
@@ -445,8 +413,7 @@ def main() -> None:
         config.pose_source = PoseSource(args.pose_source)
     if args.esp32_host is not None:
         config.esp32_host = args.esp32_host
-    if args.enable_obstacles or args.stereo:
-        config.enable_obstacles = True
+    if args.stereo:
         config.camera_mode = "stereo"
 
     pipeline = PerceptionPipeline(config)

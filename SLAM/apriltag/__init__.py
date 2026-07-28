@@ -9,6 +9,7 @@ from .mine_registry import MineRegistry
 from .models import AprilTagDetection, FusedMine, PoseEstimate
 from .platform_utils import is_headless
 from .pose_provider import Esp32PoseProvider, PoseProvider, StubPoseProvider, create_pose_provider
+from .stereo import split_stereo_frame
 
 __all__ = [
     "AprilTagDetection",
@@ -28,6 +29,7 @@ __all__ = [
     "homogeneous_from_pose",
     "is_headless",
     "load_calibration",
+    "split_stereo_frame",
     "tag_pose_to_world",
     "world_to_fine",
 ]
