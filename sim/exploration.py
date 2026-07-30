@@ -4,10 +4,10 @@ import math
 from dataclasses import dataclass, field
 
 from .config import MissionSimConfig
-from .drone_flight import DroneFlightModel, SerpentinePatrol
+from .drone_flight import DroneFlightModel, LaneCoveragePlanner, SerpentinePatrol
 from .field import HumanPathField
 from .mines import Mine
-from .pathfinding import astar_human_path, path_length_m
+from .pathfinding import plan_human_path
 from .perception_geometry import DroneSensorModel
 from .separation import (
     SeparationSnapshot,
@@ -16,10 +16,15 @@ from .separation import (
 )
 
 
+def format_mmss(seconds: float) -> str:
+    total = max(0, int(seconds))
+    return f"{total // 60:02d}:{total % 60:02d}"
+
+
 @dataclass
 class DroneState:
     flight: DroneFlightModel
-    patrol: SerpentinePatrol
+    patrol: LaneCoveragePlanner | SerpentinePatrol
     index: int = 0
     trail: list[tuple[float, float, float]] = field(default_factory=list)
 
@@ -47,12 +52,20 @@ class ExplorationMetrics:
     mines_discovered: int = 0
     path_found: bool = False
     path_length_m: float = 0.0
+    path_width_m: float = 0.0
+    path_length_ft: float = 0.0
+    path_width_ft: float = 0.0
     coverage_ratio: float = 0.0
     drone_altitudes_m: tuple[float, ...] = ()
     min_pairwise_distance_m: float | None = None
     # (drone_i, drone_j, distance_m) for pairs inside R_hard / R_soft this tick
     separation_hard_violations: tuple[tuple[int, int, float], ...] = ()
     separation_soft_violations: tuple[tuple[int, int, float], ...] = ()
+    sim_time_s: float = 0.0
+    survey_limit_s: float = 7.0 * 60.0
+    survey_over: bool = False
+    survey_complete: bool = False  # all drones landed (early or time limit)
+    max_passes_seen: int = 0
 
     def summary(self) -> str:
         pct = 100.0 * self.mines_discovered / self.mines_total if self.mines_total else 0.0
@@ -64,10 +77,16 @@ class ExplorationMetrics:
             sep = f"  sep_min={self.min_pairwise_distance_m:.1f}m"
             if self.separation_hard_violations:
                 sep += f"  HARD={len(self.separation_hard_violations)}"
+        clock = f"time={format_mmss(self.sim_time_s)} / {format_mmss(self.survey_limit_s)}"
+        if self.survey_complete:
+            clock += " LANDED"
+        elif self.survey_over:
+            clock += " SURVEY_OVER"
         return (
-            f"ticks={self.ticks}  mines={self.mines_discovered}/{self.mines_total} ({pct:.0f}%)  "
-            f"path={'yes' if self.path_found else 'no '}  "
-            f"length={self.path_length_m:.1f}m  coverage={self.coverage_ratio*100:.0f}%{alt}{sep}"
+            f"{clock}  ticks={self.ticks}  mines={self.mines_discovered}/{self.mines_total} ({pct:.0f}%)  "
+            f"path={'yes' if self.path_found else 'NO SAFE PATH'}  "
+            f"W={self.path_width_ft:.1f}ft L={self.path_length_ft:.1f}ft  "
+            f"coverage={self.coverage_ratio*100:.0f}%{alt}{sep}"
         )
 
 
@@ -85,11 +104,13 @@ class ExplorationSim:
         num_drones: int = 4,
         sensor_range_m: float = 4.0,
         legacy_patrol: bool = False,
+        serpentine_patrol: bool = False,
         sensor: DroneSensorModel | None = None,
     ):
         self.config = config
         self.truth_mines = list(truth_mines)
         self.legacy_patrol = legacy_patrol
+        self.serpentine_patrol = serpentine_patrol
         self.sensor = sensor or DroneSensorModel(
             ref_altitude_m=config.default_altitude_m,
             ref_ground_range_m=sensor_range_m,
@@ -97,25 +118,53 @@ class ExplorationSim:
         self.discovered: dict[int, Mine] = {}
         self.field = HumanPathField(config)
         self.path: list[tuple[int, int]] | None = None
-        self.metrics = ExplorationMetrics(mines_total=len(truth_mines))
+        self.path_result = None
+        self.metrics = ExplorationMetrics(
+            mines_total=len(truth_mines),
+            survey_limit_s=config.survey_limit_s,
+        )
         self._visited: set[tuple[int, int]] = set()
 
         margin = config.edge_margin_m
+        n = max(1, num_drones)
         self.drones: list[DroneState] = []
-        for i in range(max(1, num_drones)):
-            y = config.field_y_m * (i + 1) / (num_drones + 1)
-            y = max(margin, min(config.field_y_m - margin, y))
-            flight = DroneFlightModel(x=margin, y=y, z=config.default_altitude_m)
+        for i in range(n):
+            if serpentine_patrol:
+                y = config.field_y_m * (i + 1) / (n + 1)
+                y = max(margin, min(config.field_y_m - margin, y))
+            else:
+                lane_width = config.field_y_m / float(n)
+                y = lane_width * (i + 0.5)
+                y = max(margin, min(config.field_y_m - margin, y))
+            flight = DroneFlightModel(
+                x=margin,
+                y=y,
+                z=config.default_altitude_m,
+                control_dt_s=config.control_dt_s,
+            )
             flight.set_altitude_limits(config.min_altitude_m, config.max_altitude_m)
             flight.arm()
-            patrol = SerpentinePatrol(
-                config.field_x_m,
-                config.field_y_m,
-                margin,
-                lane_y=y,
-                phase_x_m=i * 6.0,
-                target_z_m=config.default_altitude_m,
-            )
+            if serpentine_patrol:
+                patrol: LaneCoveragePlanner | SerpentinePatrol = SerpentinePatrol(
+                    config.field_x_m,
+                    config.field_y_m,
+                    margin,
+                    lane_y=y,
+                    phase_x_m=i * 6.0,
+                    target_z_m=config.default_altitude_m,
+                )
+            else:
+                patrol = LaneCoveragePlanner(
+                    field_x_m=config.field_x_m,
+                    field_y_m=config.field_y_m,
+                    margin_m=margin,
+                    lane_index=i,
+                    num_drones=n,
+                    search_speed_m_s=config.search_speed_m_s,
+                    target_z_m=config.default_altitude_m,
+                    return_offset_m=config.return_offset_m,
+                    num_passes=config.num_passes,
+                )
             self.drones.append(
                 DroneState(
                     flight=flight,
@@ -138,9 +187,28 @@ class ExplorationSim:
 
     def step(self) -> ExplorationMetrics:
         self.metrics.ticks += 1
+        sim_time = self.metrics.ticks * self.config.control_dt_s
+        time_up = sim_time >= self.config.survey_limit_s - 1e-9
+
         for drone in self.drones:
+            if (
+                not self.legacy_patrol
+                and not self.serpentine_patrol
+                and isinstance(drone.patrol, LaneCoveragePlanner)
+            ):
+                if time_up:
+                    drone.patrol.force_land()
             self._move_drone(drone)
-            self._discover_near(drone)
+            if (
+                isinstance(drone.patrol, LaneCoveragePlanner)
+                and drone.patrol.landed
+                and drone.flight.motors_enabled
+            ):
+                drone.flight.disarm()
+            if not (
+                isinstance(drone.patrol, LaneCoveragePlanner) and drone.patrol.landed
+            ):
+                self._discover_near(drone)
             row, col = self.field.world_to_cell(drone.x, drone.y)
             self._visited.add((row, col))
 
@@ -148,9 +216,34 @@ class ExplorationSim:
         total_cells = self.config.rows * self.config.cols
         self.metrics.mines_discovered = len(self.discovered)
         self.metrics.path_found = self.path is not None
-        self.metrics.path_length_m = path_length_m(self.field, self.path) if self.path else 0.0
+        self.metrics.path_length_m = (
+            self.path_result.length_m if self.path_result and self.path_result.found else 0.0
+        )
+        self.metrics.path_width_m = (
+            self.path_result.width_m if self.path_result and self.path_result.found else 0.0
+        )
+        self.metrics.path_length_ft = (
+            self.path_result.length_ft if self.path_result and self.path_result.found else 0.0
+        )
+        self.metrics.path_width_ft = (
+            self.path_result.width_ft if self.path_result and self.path_result.found else 0.0
+        )
         self.metrics.coverage_ratio = len(self._visited) / total_cells if total_cells else 0.0
         self.metrics.drone_altitudes_m = tuple(d.z for d in self.drones)
+        self.metrics.sim_time_s = sim_time
+        self.metrics.survey_limit_s = self.config.survey_limit_s
+        self.metrics.survey_over = time_up
+        if not self.legacy_patrol and not self.serpentine_patrol:
+            passes = [
+                d.patrol.passes_completed
+                for d in self.drones
+                if isinstance(d.patrol, LaneCoveragePlanner)
+            ]
+            self.metrics.max_passes_seen = max(passes) if passes else 0
+            self.metrics.survey_complete = bool(passes) and all(
+                isinstance(d.patrol, LaneCoveragePlanner) and d.patrol.landed
+                for d in self.drones
+            )
         sep = self.compute_drone_separation()
         self.metrics.min_pairwise_distance_m = sep.min_pairwise_distance_m
         self.metrics.separation_hard_violations = tuple(
@@ -183,6 +276,8 @@ class ExplorationSim:
             drone.flight.z,
             drone.flight.yaw,
             drone.flight.hover_throttle,
+            vx=drone.flight.vx,
+            vy=drone.flight.vy,
         )
         drone.flight.set_sticks(*sticks)
         drone.flight.controls_step(
@@ -244,10 +339,13 @@ class ExplorationSim:
 
     def _replan(self) -> None:
         n = len(self.discovered)
-        if n == 0:
-            self.path = None
+        # Always replan when discovery count changes (including 0 → clear path).
+        if n == self._last_replan_discovered and n > 0:
             return
-        if n == self._last_replan_discovered:
+        if n == 0 and self._last_replan_discovered == 0 and self.path_result is not None:
             return
         self._last_replan_discovered = n
-        self.path = astar_human_path(self.field)
+        self.field.rebuild_from_mines(list(self.discovered.values()))
+        result = plan_human_path(self.field)
+        self.path_result = result
+        self.path = result.path_cells if result.found else None

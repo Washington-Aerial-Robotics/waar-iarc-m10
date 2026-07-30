@@ -7,13 +7,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.patches import Circle
 
-from .exploration import ExplorationMetrics, ExplorationSim
+from .exploration import ExplorationMetrics, ExplorationSim, format_mmss
 from .field import HumanPathField
 from .perception_geometry import DroneSensorModel
 from .types import FREE, HAZARD, INFLATED
 
 # Distinct markers when running four competition drones
 DRONE_COLORS = ("#7fff00", "#00e5ff", "#ff6ec7", "#ffb347")
+UNDISCOVERED_COLOR = "#aaaaaa"
 
 
 def _drone_color(index: int) -> str:
@@ -37,6 +38,7 @@ def save_human_path_plot(
     drones=None,
     sensor: DroneSensorModel | None = None,
     title: str = "Human path over discovered mines",
+    path_width_m: float = 0.0,
 ) -> None:
     _render_frame(
         field,
@@ -46,6 +48,7 @@ def save_human_path_plot(
         sensor=sensor,
         title=title,
         save_path=output,
+        path_width_m=path_width_m,
     )
 
 
@@ -53,11 +56,26 @@ def run_explore_animation(
     sim: ExplorationSim,
     *,
     max_ticks: int,
-    delay_s: float,
+    delay_s: float | None,
     show_truth: bool,
     output: Path | None,
+    time_scale: float = 1.0,
 ) -> ExplorationMetrics:
+    """
+    Animate exploration.
+
+    Physics: always one sim.step() = control_dt_s (0.25 s) of mission time.
+    Playback: draw every tick; pause = control_dt / time_scale so wall-clock
+    ≈ (max_ticks * control_dt) / time_scale with smooth (non-chunky) motion.
+    """
     cfg = sim.config
+    control_dt = cfg.control_dt_s
+    time_scale = max(1e-6, float(time_scale))
+    if delay_s is None:
+        frame_pause_s = control_dt / time_scale
+    else:
+        frame_pause_s = max(0.0, float(delay_s))
+
     fig, (ax_map, ax_side) = plt.subplots(
         2,
         1,
@@ -72,7 +90,8 @@ def run_explore_animation(
         aspect="equal",
         interpolation="nearest",
     )
-    path_line, = ax_map.plot([], [], color="#00e5ff", linewidth=2, label="human path")
+    path_line, = ax_map.plot([], [], color="#00e5ff", linewidth=2.5, label="human path", zorder=5)
+    corridor_poly = {"artist": None}
     drone_dots = [
         ax_map.plot([], [], "o", color=_drone_color(i), markersize=6)[0]
         for i, _ in enumerate(sim.drones)
@@ -88,8 +107,24 @@ def run_explore_animation(
     for i, patch in enumerate(footprint_patches):
         patch.set_edgecolor(_drone_color(i))
         ax_map.add_patch(patch)
-    truth_scatter = ax_map.plot([], [], "x", color="#666666", markersize=6, alpha=0.5)[0]
-    discovered_scatter = ax_map.plot([], [], "x", color="white", markersize=8, markeredgewidth=2)[0]
+    truth_scatter = ax_map.plot(
+        [],
+        [],
+        "x",
+        color=UNDISCOVERED_COLOR,
+        markersize=7,
+        alpha=0.85,
+        label="undiscovered",
+    )[0]
+    discovered_scatter = ax_map.plot(
+        [],
+        [],
+        "x",
+        color="white",
+        markersize=8,
+        markeredgewidth=2,
+        label="discovered",
+    )[0]
     ax_map.axvline(cfg.edge_margin_m, color="lime", linestyle="--", alpha=0.5)
     ax_map.axvline(cfg.field_x_m - cfg.edge_margin_m, color="yellow", linestyle="--", alpha=0.5)
     ax_map.set_xlim(0, cfg.field_x_m)
@@ -113,9 +148,20 @@ def run_explore_animation(
     status = fig.suptitle("Exploration sim", fontsize=10)
     plt.tight_layout()
 
-    last_metrics = ExplorationMetrics(mines_total=sim.metrics.mines_total)
+    # Seed undiscovered markers from discovery state (none found yet)
+    if show_truth and sim.truth_mines:
+        truth_scatter.set_data(
+            [m.world_x for m in sim.truth_mines],
+            [m.world_y for m in sim.truth_mines],
+        )
+
+    last_metrics = ExplorationMetrics(
+        mines_total=sim.metrics.mines_total,
+        survey_limit_s=cfg.survey_limit_s,
+    )
     for _ in range(max_ticks):
         last_metrics = sim.step()
+
         img.set_data(_rgb_grid(sim.field))
         if sim.path:
             xs, ys = [], []
@@ -124,8 +170,21 @@ def run_explore_animation(
                 xs.append(x)
                 ys.append(y)
             path_line.set_data(xs, ys)
+            half_w = 0.5 * float(getattr(sim.path_result, "width_m", 0.0) or 0.0)
+            if corridor_poly["artist"] is not None:
+                corridor_poly["artist"].remove()
+                corridor_poly["artist"] = None
+            if half_w > 0 and len(xs) >= 2:
+                y_lo = [max(0.0, y - half_w) for y in ys]
+                y_hi = [min(cfg.field_y_m, y + half_w) for y in ys]
+                corridor_poly["artist"] = ax_map.fill_between(
+                    xs, y_lo, y_hi, color="#00e5ff", alpha=0.15, zorder=2
+                )
         else:
             path_line.set_data([], [])
+            if corridor_poly["artist"] is not None:
+                corridor_poly["artist"].remove()
+                corridor_poly["artist"] = None
         for i, (dot, heading, patch, drone) in enumerate(
             zip(drone_dots, drone_headings, footprint_patches, sim.drones)
         ):
@@ -144,21 +203,34 @@ def run_explore_animation(
                     [p[0] for p in drone.trail[-120:]],
                     [p[2] for p in drone.trail[-120:]],
                 )
+
+        discovered_ids = set(sim.discovered.keys())
         if sim.discovered:
             discovered_scatter.set_data(
                 [m.world_x for m in sim.discovered.values()],
                 [m.world_y for m in sim.discovered.values()],
             )
+        else:
+            discovered_scatter.set_data([], [])
+
         if show_truth:
-            hidden = [m for m in sim.truth_mines if m.tag_id not in sim.discovered]
+            hidden = [m for m in sim.truth_mines if m.tag_id not in discovered_ids]
             if hidden:
-                truth_scatter.set_data([m.world_x for m in hidden], [m.world_y for m in hidden])
+                truth_scatter.set_data(
+                    [m.world_x for m in hidden],
+                    [m.world_y for m in hidden],
+                )
             else:
                 truth_scatter.set_data([], [])
+
         status.set_text(last_metrics.summary())
         fig.canvas.draw()
         fig.canvas.flush_events()
-        plt.pause(delay_s)
+        if frame_pause_s > 0:
+            plt.pause(frame_pause_s)
+
+        if last_metrics.survey_complete or last_metrics.survey_over:
+            break
 
     plt.ioff()
     if output is not None:
@@ -170,6 +242,7 @@ def run_explore_animation(
             drones=sim.drones,
             sensor=sim.sensor,
             title=f"Final — {last_metrics.summary()}",
+            path_width_m=float(getattr(sim.path_result, "width_m", 0.0) or 0.0),
         )
     else:
         plt.show(block=True)
@@ -186,6 +259,7 @@ def _render_frame(
     sensor: DroneSensorModel | None,
     title: str,
     save_path: Path | None,
+    path_width_m: float = 0.0,
 ) -> None:
     cfg = field.config
     fig, (ax_map, ax_side) = plt.subplots(
@@ -201,10 +275,18 @@ def _render_frame(
         aspect="equal",
         interpolation="nearest",
     )
+    discovered_ids = {m.tag_id for m in field.mines}
     if truth_mines:
         for mine in truth_mines:
-            if mine.tag_id not in {m.tag_id for m in field.mines}:
-                ax_map.plot(mine.world_x, mine.world_y, "x", color="#666666", markersize=6, alpha=0.5)
+            if mine.tag_id not in discovered_ids:
+                ax_map.plot(
+                    mine.world_x,
+                    mine.world_y,
+                    "x",
+                    color=UNDISCOVERED_COLOR,
+                    markersize=7,
+                    alpha=0.85,
+                )
     for mine in field.mines:
         ax_map.plot(mine.world_x, mine.world_y, "x", color="white", markersize=8, markeredgewidth=2)
     if path:
@@ -213,7 +295,23 @@ def _render_frame(
             x, y = field.cell_to_world(row, col)
             xs.append(x)
             ys.append(y)
-        ax_map.plot(xs, ys, color="#00e5ff", linewidth=2, label="human path")
+        half_w = 0.5 * max(0.0, float(path_width_m))
+        if half_w > 0 and len(xs) >= 2:
+            y_lo = [max(0.0, y - half_w) for y in ys]
+            y_hi = [min(cfg.field_y_m, y + half_w) for y in ys]
+            ax_map.fill_between(xs, y_lo, y_hi, color="#00e5ff", alpha=0.15, zorder=2, label="corridor W")
+        ax_map.plot(xs, ys, color="#00e5ff", linewidth=2.5, label="human path", zorder=5)
+    elif "NO SAFE PATH" in title.upper():
+        ax_map.text(
+            cfg.field_x_m * 0.5,
+            cfg.field_y_m * 0.5,
+            "NO SAFE PATH FOUND",
+            color="#ff5555",
+            fontsize=14,
+            ha="center",
+            va="center",
+            fontweight="bold",
+        )
     if drones:
         for i, drone in enumerate(drones):
             color = _drone_color(i)

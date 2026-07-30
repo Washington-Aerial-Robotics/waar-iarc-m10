@@ -166,9 +166,11 @@ Loaders: CSV (`SLAM/mine_detections.csv` schema), JSON, `generate_random_mines(s
 - Linear drag on velocities.
 - World `x,y` clamped to field margins; velocity zeroed at walls.
 
-**Altitude behavior today:** Patrol (`SerpentinePatrol`) sets `target_z_m = default_altitude` and adjusts throttle with P on `z_err`. At cruise, drones **hold ~1.5 m** — you will **not** see altitude change unless the policy commands sustained throttle bias or you add tasks that require climbing (RL can use z as action dimension).
+**Altitude behavior today:** Lane coverage (`LaneCoveragePlanner`, default) and legacy `SerpentinePatrol` set `target_z_m = default_altitude` and adjust throttle with P on `z_err`. At cruise, drones **hold ~1.5 m** — you will **not** see altitude change unless the policy commands sustained throttle bias or you add tasks that require climbing (RL can use z as action dimension).
 
-**`SerpentinePatrol`:** Placeholder autonomy — waypoint serpentine in x/y, outputs sticks. **This is what RL should replace** for exploration (one policy per drone or centralized).
+**`LaneCoveragePlanner` (default):** Per-drone fixed Y lane, axis-aligned ±X boustrophedon, stick output with search-speed governor. **This is the baseline autonomy RL should beat/replace** for exploration.
+
+**`SerpentinePatrol`:** Legacy placeholder — diagonal waypoint chase, outputs sticks. Opt in with `--serpentine-patrol`.
 
 ### `sim/perception_geometry.py` — `DroneSensorModel`
 

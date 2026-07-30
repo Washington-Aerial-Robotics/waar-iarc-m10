@@ -9,7 +9,7 @@ from .config import MissionSimConfig
 from .exploration import ExplorationSim
 from .field import HumanPathField
 from .mines import generate_random_mines, load_mines_from_csv, load_mines_from_json
-from .pathfinding import astar_human_path, path_length_m
+from .pathfinding import plan_human_path, path_length_m
 from .replay import mines_by_timestamp
 from .visualize import run_explore_animation, save_human_path_plot
 
@@ -26,7 +26,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--field-x", type=float, default=91.44, help="Field length / downrange (m), 300 ft")
     parser.add_argument("--field-y", type=float, default=24.38, help="Field width (m), 80 ft")
     parser.add_argument("--resolution", type=float, default=0.2)
-    parser.add_argument("--clearance", type=float, default=0.3, help="Mine inflation radius (m)")
+    parser.add_argument(
+        "--clearance",
+        type=float,
+        default=0.3048,
+        help="Mine inflation radius (m); IARC default = 1 ft = 0.3048",
+    )
     parser.add_argument(
         "--output",
         type=Path,
@@ -50,7 +55,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Discover mines in timestamp order from perception log (use with --explore)",
     )
-    parser.add_argument("--ticks", type=int, default=400, help="Max simulation ticks")
+    parser.add_argument(
+        "--ticks",
+        type=int,
+        default=None,
+        help="Max simulation ticks (default: survey window = 7 min = 1680 ticks at 0.25 s)",
+    )
     parser.add_argument("--drones", type=int, default=4, help="Patrol drones (IARC team size)")
     parser.add_argument("--sensor-range", type=float, default=4.0, help="Ground range at ref altitude (m)")
     parser.add_argument("--default-altitude", type=float, default=1.5, help="Cruise altitude (m AGL)")
@@ -69,8 +79,35 @@ def build_parser() -> argparse.ArgumentParser:
         help="Safety floor: pairs closer than this are hard violations (m)",
     )
     parser.add_argument("--animate", action="store_true", help="Live matplotlib viewer")
-    parser.add_argument("--delay", type=float, default=0.03, help="Seconds per frame when animating")
-    parser.add_argument("--show-truth", action="store_true", help="Gray X for undiscovered mines")
+    parser.add_argument(
+        "--delay",
+        type=float,
+        default=None,
+        help=(
+            "Seconds to pause after each rendered frame. "
+            "Default uses physics dt (0.25 s) so wall-clock ≈ sim_time / time-scale."
+        ),
+    )
+    parser.add_argument(
+        "--time-scale",
+        type=float,
+        default=14.0,
+        help=(
+            "Playback only: shorten frame pause by N (default 14 → 7 min ≈ 30 s wall-clock). "
+            "Draws every physics tick for smooth motion; does NOT change drone speed."
+        ),
+    )
+    parser.add_argument(
+        "--show-truth",
+        action="store_true",
+        default=True,
+        help="Light-grey X for undiscovered mines (default on)",
+    )
+    parser.add_argument(
+        "--hide-truth",
+        action="store_true",
+        help="Hide undiscovered mine markers",
+    )
     parser.add_argument(
         "--no-animate",
         action="store_true",
@@ -80,6 +117,23 @@ def build_parser() -> argparse.ArgumentParser:
         "--legacy-patrol",
         action="store_true",
         help="Old grid-step patrol instead of motor-mixer flight model",
+    )
+    parser.add_argument(
+        "--serpentine-patrol",
+        action="store_true",
+        help="Fall back to legacy SerpentinePatrol (diagonal chase) instead of LaneCoveragePlanner",
+    )
+    parser.add_argument(
+        "--search-speed",
+        type=float,
+        default=2.0,
+        help="Lane coverage cruise speed along X (m/s); tunable placeholder for camera search",
+    )
+    parser.add_argument(
+        "--num-passes",
+        type=int,
+        default=2,
+        help="Lane coverage legs before landing (default 2 = outbound + offset return)",
     )
     return parser
 
@@ -118,17 +172,22 @@ def load_truth_mines(args: argparse.Namespace) -> list:
 def run_instant_plan(args: argparse.Namespace, config: MissionSimConfig, mines: list) -> int:
     field = HumanPathField(config)
     field.add_mines(mines)
-    path = astar_human_path(field)
-    if path is None:
-        print("No path found — mines may block the corridor. Try fewer mines or smaller clearance.")
-        save_human_path_plot(field, None, args.output)
+    result = plan_human_path(field)
+    if not result.found:
+        print("NO SAFE PATH FOUND — discovered/known mines block all start→far corridors.")
+        save_human_path_plot(field, None, args.output, title="NO SAFE PATH FOUND")
         return 1
-    length_m = path_length_m(field, path)
-    print(f"Path found: {len(path)} waypoints, length ~{length_m:.2f} m")
-    save_human_path_plot(field, path, args.output)
+    print(result.summary())
+    save_human_path_plot(
+        field,
+        result.path_cells,
+        args.output,
+        title=result.summary(),
+        path_width_m=result.width_m,
+    )
     print(f"Saved plot to {args.output}")
     if args.export_path:
-        _export_path(field, path, args.export_path)
+        _export_path(field, result.path_cells, args.export_path)
     return 0
 
 
@@ -136,41 +195,53 @@ def run_exploration(args: argparse.Namespace, config: MissionSimConfig, truth_mi
     if args.replay_csv:
         return _run_replay(args, config, truth_mines)
 
+    show_truth = bool(args.show_truth) and not bool(args.hide_truth)
+    max_ticks = args.ticks if args.ticks is not None else config.survey_limit_ticks
+
     sim = ExplorationSim(
         config,
         truth_mines,
         num_drones=args.drones,
         sensor_range_m=args.sensor_range,
         legacy_patrol=args.legacy_patrol,
+        serpentine_patrol=args.serpentine_patrol,
     )
 
     if args.animate and not args.no_animate:
         metrics = run_explore_animation(
             sim,
-            max_ticks=args.ticks,
+            max_ticks=max_ticks,
             delay_s=args.delay,
-            show_truth=args.show_truth,
+            show_truth=show_truth,
             output=args.output,
+            time_scale=args.time_scale,
         )
         print(metrics.summary())
         if sim.path and args.export_path:
             _export_path(sim.field, sim.path, args.export_path)
         return 0 if metrics.path_found else 1
 
-    for _ in range(args.ticks):
+    for _ in range(max_ticks):
         metrics = sim.step()
-        if metrics.mines_discovered == metrics.mines_total and metrics.path_found:
+        if metrics.survey_complete or metrics.survey_over:
             break
+        if metrics.mines_discovered == metrics.mines_total and metrics.path_found:
+            # Still finish coverage passes — do not early-exit on mines alone
+            pass
 
     print(metrics.summary())
+    path_title = metrics.summary()
+    if metrics.mines_discovered > 0 and not metrics.path_found:
+        path_title = "NO SAFE PATH FOUND — " + metrics.summary()
     save_human_path_plot(
         sim.field,
         sim.path,
         args.output,
-        truth_mines=truth_mines if args.show_truth else None,
+        truth_mines=truth_mines if show_truth else None,
         drones=sim.drones,
         sensor=sim.sensor,
-        title=f"Exploration — {metrics.summary()}",
+        title=path_title,
+        path_width_m=float(getattr(sim.path_result, "width_m", 0.0) or 0.0),
     )
     print(f"Saved plot to {args.output}")
     if sim.path and args.export_path:
@@ -267,6 +338,8 @@ def main(argv: list[str] | None = None) -> int:
         max_altitude_m=args.max_altitude,
         min_separation_soft_m=args.min_separation_soft,
         min_separation_hard_m=args.min_separation_hard,
+        search_speed_m_s=args.search_speed,
+        num_passes=args.num_passes,
     )
 
     if args.explore or args.replay_csv:
