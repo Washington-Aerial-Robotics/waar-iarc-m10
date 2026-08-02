@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Master Control Panel</title>
+    <link rel="icon" href="icon.png">
+    <link rel="stylesheet" href="styles.css"/>
+  </head>
+  <body>
+    <header class="topbar hdr">
+      <a class="button" href="homepage.html">Master Panel</a>
+      <h1 class="hdrl" id="homepage">KAF Drone Ground Station Master Panel</h1>
+      <a class="button" href="https://github.com/Washington-Aerial-Robotics/waar-iarc-m10/tree/Firmware-Kent/ESP32/KAF_Drone">Source Code</a>
+    </header>
+    <main class="home-layout">
+      <section class="lc1">
+        <div class="pnl">
+          <div class="pnl-title">Safety</div>
+          <div class="pnl-body">
+            <div class="lc3">
+              <button class="button" onclick="homepage_disarm()">Disarm Motors</button>
+              <button class="button" onclick="root_kill(false)">Kill</button>
+              <button class="button" onclick="root_hover()">Hover Drone</button>
+              <button class="button" onclick="root_savedata()">Save Data</button>
+              <button class="button" onclick="root_manual()">Manual Override</button>
+              <button class="button" onclick="root_dosafety(event.target)">Enable Safety</button>
+            </div>
+          </div>
+        </div>
+        <div class="pnl">
+          <div class="pnl-title">Control Panels</div>
+          <div class="pnl-body">
+            <div class="lc1">
+              <a class="button button-thin" href="manual.html">Manual Control</a>
+              <a class="button button-thin" href="logging.html">Data Logging</a>
+              <a class="button button-thin" href="calibration.html">Calibrations</a>
+            </div>
+          </div>
+        </div>
+        <div class="pnl">
+          <div class="pnl-title">Connection</div>
+          <div class="pnl-body">
+            <div class="lc1">
+              <label for="ipaddress">IP:</label>
+              <input id="ipaddress" type="text" class="field" oninput="root_updateinput(event.target)" value="0.0.0.0", readonly/>
+              <label for="network">Network:</label>
+              <input id="network" type="text" class="field" oninput="root_updateinput(event.target)" placeholder="Network Name"/>
+              <label for="password">Password:</label>
+              <input id="password" type="password" class="field" oninput="root_updateinput(event.target)" placeholder="Network Password"/>
+              <label for="droneid">Drone ID:</label>
+              <input id="droneid" type="text" class="field" oninput="root_updateinput(event.target)" placeholder="Drone ID Number"/>
+              <label for="wifiselect">Connection Type:</label>
+              <select id="wifiselect" class="field" onchange="root_updateinput(event.target)"">
+                <option>AP Mode</option>
+                <option>WiFi Network</option>
+              </select>
+              <button class="button button-thin" onclick="homepage_setnetwork()">Update</button>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section class="lc1">
+        <div class="lcgraph">
+          <div class="graph"><canvas id="attitude"></canvas></div>
+          <div class="graph"><canvas id="position"></canvas></div>
+          <div class="graph graph-wide"><canvas id="r0"></canvas></div>
+          <div class="graph graph-wide"><canvas id="r3"></canvas></div>
+          <div class="graph graph-wide"><canvas id="r1"></canvas></div>
+          <div class="graph graph-wide"><canvas id="r4"></canvas></div>
+          <div class="graph graph-wide"><canvas id="r2"></canvas></div>
+          <div class="graph graph-wide"><canvas id="r5"></canvas></div>
+        </div>
+      </section>
+      <section class="lc1">
+        <div class="pnl">
+          <div class="pnl-title">Control Mode</div>
+          <div class="pnl-body">
+            <div class="lc1">
+              <button class="button" id="armstat" onclick="homepage_armingstatus()">ARMED/UNARMED</button>
+              <label for="modeselect">Flight Mode:</label>
+              <select id="modeselect" class="field" oninput="homepage_flightmode()">
+                <option>None</option>
+                <option>Inactive</option>
+                <option>Sensor Calibration</option>
+                <option>Manual Actuation</option>
+                <option>Motor Setpoint Control</option>
+                <option>Acceleration Control</option>
+                <option>Position Control</option>
+                <option>Trajectory Control</option>
+              </select>
+              <button class="button button-thin" onclick="homepage_zeroout()">Zero Out State Estimate</button>
+            </div>
+          </div>
+        </div>
+        <div class="pnl">
+          <div class="pnl-title">Command Setpoints</div>
+          <div class="pnl-body">
+            <div class="lc5">
+              <input id="s0" type="text" class="field" oninput="root_updateinput(event.target)"/>
+              <input id="s1" type="text" class="field" oninput="root_updateinput(event.target)"/>
+              <input id="s2" type="text" class="field" oninput="root_updateinput(event.target)"/>
+              <input id="s3" type="text" class="field" oninput="root_updateinput(event.target)"/>
+              <input id="s4" type="text" class="field" oninput="root_updateinput(event.target)"/>
+              <input id="s5" type="text" class="field" oninput="root_updateinput(event.target)"/>
+              <input id="s6" type="text" class="field" oninput="root_updateinput(event.target)"/>
+              <input id="s7" type="text" class="field" oninput="root_updateinput(event.target)"/>
+              <input id="s8" type="text" class="field" oninput="root_updateinput(event.target)"/>
+              <input id="s9" type="text" class="field" oninput="root_updateinput(event.target)"/>
+              <input id="s10" type="text" class="field" oninput="root_updateinput(event.target)"/>
+              <input id="s11" type="text" class="field" oninput="root_updateinput(event.target)"/>
+              <input id="s12" type="text" class="field" oninput="root_updateinput(event.target)"/>
+              <input id="s13" type="text" class="field" oninput="root_updateinput(event.target)"/>
+              <input id="s14" type="text" class="field" oninput="root_updateinput(event.target)"/>
+              <input id="s15" type="text" class="field" oninput="root_updateinput(event.target)"/>
+              <input id="s16" type="text" class="field" oninput="root_updateinput(event.target)"/>
+              <input id="s17" type="text" class="field" oninput="root_updateinput(event.target)"/>
+              <input id="s18" type="text" class="field" oninput="root_updateinput(event.target)"/>
+              <input id="s19" type="text" class="field" oninput="root_updateinput(event.target)"/>
+              <input id="s20" type="text" class="field" oninput="root_updateinput(event.target)"/>
+              <input id="s21" type="text" class="field" oninput="root_updateinput(event.target)"/>
+              <button class="button button-thin" onclick="homepage_clearsetpoints()">CLR</button>
+              <button class="button button-thin" onclick="load_setpoints()">LOAD</button>
+              <button class="button button-thin" onclick="homepage_setsetpoints()">SET</button>
+            </div>
+          </div>
+        </div>
+        <div class="pnl">
+          <div class="pnl-title">Trajectories</div>
+          <div class="pnl-body">
+            <div class="lc1">
+              <select id="trajselect" class="field">
+                <option>-- Select --</option>
+                <option>Launch</option>
+                <option>Land</option>
+                <option>Position Lock</option>
+                <option>Return Home</option>
+                <option>Glide Point</option>
+                <option>Circle Path</option>
+              </select>
+              <div class="lcfield">
+                <label for="p1">Param 1:</label>
+                <input id="p1" type="text" class="field", placeholder="Trajectory Parameter 1"/>
+                <label for="p2">Param 2:</label>
+                <input id="p2" type="text" class="field", placeholder="Trajectory Parameter 2"/>
+                <label for="p3">Param 3:</label>
+                <input id="p3" type="text" class="field", placeholder="Trajectory Parameter 3"/>
+                <label for="p4">Param 4:</label>
+                <input id="p4" type="text" class="field", placeholder="Trajectory Parameter 4"/>
+              </div>
+              <button class="button button-thin" onclick="homepage_settrajectory()">Execute</button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+    <script src="app.js"></script>
+  </body>
+</html>
