@@ -76,6 +76,7 @@ struct {
 #define WIFI_STA 0
 #define IPAddress( A, B, C, D ) 0
 #define pinMode( A, B )
+#define digitalWrite( A, B )
 #define WL_CONNECTED 1
 #define vTaskDelay
 #define xTaskCreatePinnedToCore

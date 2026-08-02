@@ -9,10 +9,11 @@
 #endif
 
 #define BOUND( V, LB, UB )    V = V > UB ? UB : ( V < LB ? LB : V )
+#define ESC_ARM                500
 #define ESC_MAX               2000
 #define ESC_MIN               1000
-#define ESC_RAMP                20
-#define ESC_ARMEDRAMP           10
+#define ESC_RAMP                 1
+#define ESC_ARMEDRAMP            1
 
 static struct {
   bool motorEnabled = false;
@@ -26,7 +27,7 @@ void peripheral_escsLoop() {
     if( escs.motorEnabled ) {
       DPRINTF( "[P] Run ESCs: Status=ACTIVE\n" );
       for( int i = 0; i < FPARLEN( kafenv.cmd.motors ); i++ ) {
-        unsigned short value = (unsigned short)( ( ESC_MAX - ESC_MIN ) * kafenv.cmd.motors[i] + ESC_MIN ) - escs.setpoints[i];
+        short value = ( ( short )( ( ESC_MAX - ESC_MIN ) * kafenv.cmd.motors[i] + ESC_MIN ) ) - ( short )escs.setpoints[i];
         BOUND( value, -ESC_RAMP, ESC_RAMP );
         value += escs.setpoints[i];
         BOUND( value, ESC_MIN, ESC_MAX );
@@ -51,8 +52,8 @@ void peripheral_escsLoop() {
     DPRINTF( "[P] Run ESCs: Status=DISABLED\n" );
     escs.motorEnabled = false;
     for( int i = 0; i < FPARLEN( kafenv.cmd.motors ); i++ ) {
-      escs.setpoints[i] = 0;
-      escs.servos[i].writeMicroseconds( 0 );
+      escs.setpoints[i] = ESC_ARM;
+      escs.servos[i].writeMicroseconds( ESC_ARM );
     }
   }
 }
@@ -65,7 +66,8 @@ void peripheral_escsInit() {
   for( int i = 0; i < FPARLEN( kafenv.cmd.motors ); i++ ) {
     pinMode( escs.pins[i], OUTPUT );
     escs.servos[i].attach( escs.pins[i] );
-    escs.servos[i].writeMicroseconds( 0 );
-    escs.setpoints[i] = 0;
+    escs.servos[i].writeMicroseconds( ESC_ARM );
+    digitalWrite( escs.pins[i], HIGH ); 
+    escs.setpoints[i] = ESC_ARM;
   }
 }

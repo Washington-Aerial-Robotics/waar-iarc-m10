@@ -49,7 +49,9 @@ void peripheral_samm10qLoop() {
       isLineAvailable = true;
       break;
     }
+    DPRINTF( "SREAD: i=%u, c=%c\n", sam.dataLen, sam.readData[sam.dataLen] );
   }
+  DPRINTF( "LINE: %s, available=%u\n", sam.readData, isLineAvailable );
   if( isLineAvailable ) {
     sam.readIndex = 0;
     char* chk1 = nextstring();
@@ -66,14 +68,18 @@ void peripheral_samm10qLoop() {
     if( memcmp( chk1, chk1cmp, sizeof( chk1cmp ) - 1 ) == 0 && strtol( chk2, NULLPTR, 10 ) != 0 ) {
       char upperlat[] = { lat[0], lat[1], 0 };
       SENSOR_BUFFER.gps.latitude = ( strtod( upperlat, NULLPTR ) + strtod( &lat[2], NULLPTR ) / 60 ) * ( latdir[0] == 'S' ? -1 : 1 );
-      char upperlng[] = { lat[0], lat[1], lat[2], 0 };
+      char upperlng[] = { lng[0], lng[1], lng[2], 0 };
       SENSOR_BUFFER.gps.longitude = ( strtod( upperlng, NULLPTR ) + strtod( &lat[3], NULLPTR ) / 60 ) * ( lngdir[0] == 'W' ? -1 : 1 );
       SENSOR_BUFFER.gps.altitude = strtod( alt, NULLPTR );
+      DPRINTF( "[P] GPS Position: Latitude=%.3f, Longitude=%.3f, Altitude=%.3f", 
+          SENSOR_BUFFER.gps.latitude, SENSOR_BUFFER.gps.longitude, SENSOR_BUFFER.gps.altitude );
       if( sam.validoffset ) {
         SENSOR_BUFFER.gps.position.x = ( float )( RADIUS * ( SENSOR_BUFFER.gps.latitude - sam.coords[0] ) );
         SENSOR_BUFFER.gps.position.y = ( float )( RADIUS * ( SENSOR_BUFFER.gps.longitude - sam.coords[1] ) * cos( SENSOR_BUFFER.gps.latitude ) );
         SENSOR_BUFFER.gps.position.z = ( float )( SENSOR_BUFFER.gps.altitude - sam.coords[2] );
         SENSOR_BUFFER.gps.update = true;
+        DPRINTF( "[P] GPS Positioning Data: Value=[ %.3f, %.3f, %.3f ]", 
+            SENSOR_BUFFER.gps.position.x, SENSOR_BUFFER.gps.position.y, SENSOR_BUFFER.gps.position.z );
       } else {
         sam.coords[0] = SENSOR_BUFFER.gps.latitude;
         sam.coords[1] = SENSOR_BUFFER.gps.longitude;

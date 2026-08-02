@@ -36,7 +36,7 @@ BME280::BME280(void)
 
     settings.commInterface = kSfeI2CMode; // Default to I2C
 
-    settings.I2CAddress = 0x77; // Default, jumper open is 0x77
+    settings.I2CAddress = 0x76; // Default, jumper open is 0x77
     _hardPort = &Wire;          // Default to Wire port
 
     settings.chipSelectPin = 10; // Select CS pin for SPI
