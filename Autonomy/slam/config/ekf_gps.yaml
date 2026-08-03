@@ -1,0 +1,52 @@
+ekf_filter_node:
+  ros__parameters:
+    frequency: 30.0
+    two_d_mode: false
+    publish_tf: true
+    map_frame: map
+    odom_frame: odom
+    base_link_frame: base_link
+    world_frame: odom
+    
+    # Barometer input - z position
+    pose0: /baro/pose
+    pose0_config: [false, false, true,
+                   false, false, false,
+                   false, false, false,
+                   false, false, false,
+                   false, false, false]
+
+    # Converted GPS Odometry input - x, y position
+    odom1: /odometry/gps
+    odom1_config: [true,  true,  false,
+                   false, false, false,
+                   false, false, false,
+                   false, false, false,
+                   false, false, false]
+
+    # Visual/Stereo Odometry input - x, y, z velocity
+    odom0: /stereo/odom
+    odom0_config: [false, false, false,
+                  false, false, false,
+                  true, true, true,
+                  false, false, false,
+                  false, false, false]
+
+    # IMU input - yaw, pitch, roll, angular velocities
+    imu0: /imu/data
+    imu0_config: [false, false, false,
+                  true,  true,  true,
+                  false, false, false,
+                  true,  true,  true,
+                  false, false, false]
+    imu0_differential: false
+
+navsat_transform:
+  ros__parameters:
+    frequency: 10.0
+    delay: 3.0
+    magnetic_declination_radians: 0.0 # Adjust for your local magnetic declination
+    yaw_offset: 0.0
+    zero_altitude: true
+    use_odometry_yaw: false
+    wait_for_datum: false
