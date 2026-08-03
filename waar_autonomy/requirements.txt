@@ -1,0 +1,9 @@
+numpy
+matplotlib
+scipy
+networkx
+tqdm
+pyyaml
+pytest
+black
+isort
