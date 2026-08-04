@@ -2,7 +2,9 @@
 
 ## Project Overview
 
-Multi-agent drone coordination system for IARC Mission 10 (300 ft × 80 ft arena, 7-minute mission, 4 drones). Each drone runs three independent ROS2 nodes: `p2p_sync_node` (belief synchronisation via a Scheme-B sync-window protocol), `p2p_task_node` (distributed task auction), and `mission_logic_node` (state machine + behaviour tree). A fourth component, `ros2_adapter_v2.py`, lives in Kevin's `waar_autonomy` repo and bridges his `BaselineLoop` path planner to the MAS topics. All four MAS nodes are pure-Python, use only `mas_interfaces` custom messages, and are designed to run without a centralised coordinator.
+Multi-agent drone coordination system for IARC Mission 10 (300 ft × 80 ft arena, 7-minute mission, 4 drones). Each drone runs three independent ROS2 nodes: `p2p_sync_node` (belief synchronisation via a Scheme-B sync-window protocol), `p2p_task_node` (distributed task auction), and `mission_logic_node` (state machine + behaviour tree). A fourth component, `ros2_adapter_v2.py`, lives in `waar_autonomy/src/adapters/` and bridges the MAS topics to a planner. All four MAS nodes are pure-Python, use only `mas_interfaces` custom messages, and are designed to run without a centralised coordinator.
+
+> **Correction (see "ros2_adapter_v2" below):** earlier drafts of this doc described `ros2_adapter_v2.py` as bridging a class called `BaselineLoop`. That class does not exist anywhere in this repo, and neither did the adapter file itself — despite the "Integration History" section below narrating a full end-to-end integration as if it had already happened. It has now been implemented, but against the planner that actually exists in this repo: `application.simulator.Simulator`. Treat everything below tagged **[as-implemented]** as accurate to the real code; everything else in this file describes the original plan, which does not fully match what `Simulator` can do (see "Known limitations" under ros2_adapter_v2).
 
 ---
 
@@ -121,20 +123,25 @@ waar_autonomy/src/adapters/
 - **Implemented:** 6-node priority selector. Collision guard (`R_COLLISION=0.8m`), geofence guard (uses `node.arena_w/h`), failure monitor (pose stale > 3 s → FAILSAFE), task executor (consumes `pending_task_cmd`), exploration policy (dispatches per state), P2P sync manager (always SUCCESS).
 - **Stub:** `P2PSyncManagerNode` is a no-op leaf — the actual sync protocol runs in a separate ROS2 process.
 
-### ros2_adapter_v2 (waar_autonomy)
+### ros2_adapter_v2 (waar_autonomy) — [as-implemented]
+Lives at `waar_autonomy/src/adapters/ros2_adapter_v2.py`. Bridges MAS topics to `application.simulator.Simulator` (WorldModel + DroneState + GroundTruthPort, ticked through observe → corridor → certify → frontier) — **not** `BaselineLoop`, which does not exist in this repo.
+
 - **Implemented:**
-  - Drives all 4 drones from a single `Ros2ExplorerNode` calling `BaselineLoop.tick()` at configurable Hz (default 2 Hz)
-  - Manhattan-step movement toward assigned blocks; VERIFY_TAG task interrupt overrides exploration
-  - Mine candidate publishing on `hazard_evidence >= 0.5` via `/{drone_id}/mine_candidates`
-  - `_NullPerception` fallback when `SimPerceptionAdapter` import fails
-  - Subscribes to `/{drone_id}/task_cmd` and `/{drone_id}/mission_cmd`
-  - **PoseBeacon publishing:** `send_waypoint()` publishes both `/{drone_id}/pose` (PoseStamped) and `/team/pose_beacon` (PoseBeacon) so `p2p_sync_node` and `mission_logic_node` see real drone positions
-  - **Spread start positions:** drones start at cols 11, 34, 57, 80 (world x = 11.5m, 34.5m, 57.5m, 80.5m) — over 22m separation, well clear of `R_COLLISION=0.8m`
-  - **Position interpolation:** `send_waypoint()` advances at most `_NAV_MAX_STEP=2.0m` per call toward the target; prevents distance discontinuities that would thrash the neighbor graph
+  - Single `Ros2ExplorerNode` drives all drones (`drone_ids` param, default `d1..d4`), each with its **own** `Simulator`/`WorldModel`/`DroneState`/ground-truth map — built correctly from the start, not shared
+  - Ticks each drone's `Simulator.tick()` at configurable Hz (`tick_hz` param, default 2 Hz), unless held or executing a task
+  - `VERIFY_TAG` task interrupt: on `/{drone_id}/task_cmd`, steps the drone one block per tick toward `(target_x, target_y)` (converted via `xy_to_coord`) instead of exploring, calling `observe_block()` along the way so the world model stays current
+  - On reaching a `VERIFY_TAG` target, publishes `TaskResult` directly to `/team/task_result` (outcome `"confirmed"`, confidence `1.0`) — `p2p_task_node` runs in a separate process, so this goes over the topic, not a direct method call
+  - `/{drone_id}/mission_cmd`: `HOLD_POSITION` pauses ticking, `LAND_AND_SUBMIT` stops the drone permanently; all other commands (`SWEEP_SECTOR`, `FILL_GAPS`, `VERIFY_PATH`, `STANDBY_FOR_TASK`, `AWAIT_PATH_VERIFY`) are logged only
+  - Publishes `/{drone_id}/pose` (PoseStamped) and `/team/pose_beacon` (PoseBeacon) every tick from `Simulator.drone.block`
+  - Publishes `/{drone_id}/mine_candidates` for each newly-detected `HAZARD` fine cell in `WorldModel.detected`, confidence `1.0` (see "Known limitations" — this isn't a continuous score)
+  - `coord_to_xy` / `xy_to_coord` pure functions match the contract `mas_coordinator/tests/test_state_machine.py::TestCoordConversion` already expected
 - **Known limitations:**
-  - `beacon.state` is hardcoded to `"SURVEY"` — no sm_state bridge wired yet
-  - `_on_mission_cmd` stores JSON in `_mission_cmd` but never acts on it — HOLD_POSITION, LAND_AND_SUBMIT, SWEEP_SECTOR are all ignored; BaselineLoop always runs its own planning
-  - All 4 drones share one `WorldModel` instance — frontiers exhaust after ~1 drone covers the area, leaving the other 3 idle
+  - **`Simulator` ≠ `BaselineLoop`:** no continuous XY position, no velocity/interpolation, no built-in collision avoidance between drones — `DroneState.block` teleports one block per tick. The previously-documented "spread start positions" / "position interpolation" fixes don't apply to this architecture; each drone's block grid is independent so there's no literal collision to avoid in the first place.
+  - **Arena scale mismatch:** `coord_to_xy` uses `CELL_SIZE=1.0` as a placeholder. `waar_autonomy`'s block grid has no inherent physical scale (`Config` defaults to a 20×15-block test arena), while `mission_logic_node` assumes a real 91.44m × 24.38m arena. A fully-explored simulated arena only ever reports as a ~20m × 15m box — `mission_logic_node`'s geofence/collision guards, sized for the real arena, won't see meaningful bounds against these poses.
+  - `beacon.state` is a local guess (`"VERIFY_TAG"` while a task is active, else `"SURVEY"`) — no sm_state bridge wired yet, so this still isn't the authoritative `mission_logic_node` state
+  - Binary hazard detection, not a confidence score: `Simulator`'s sensing model only has `HAZARD`/not-`HAZARD`, unlike the continuous `hazard_evidence` this doc previously assumed. Every newly-detected hazard cell is reported once at confidence `1.0`.
+  - Sector-constrained exploration (`SWEEP_SECTOR`, `FILL_GAPS`) isn't wired in — `Simulator`'s frontier scorer (`best_frontier`) has no concept of a bounded sector, so these directives are logged and ignored
+  - `PATH_VERIFY`-specific directives (`VERIFY_PATH` waypoints, `BECOME_PATH_VERIFIER`) aren't handled — only `VERIFY_TAG` task_cmds trigger the target-seeking behavior above
 
 ---
 
@@ -142,11 +149,11 @@ waar_autonomy/src/adapters/
 
 1. **p2p_sync_node my_state hardcoded to `"SURVEY"`:** The initial value was changed from `"BOOT"` to `"SURVEY"` to allow the BOOT→SURVEY transition to work (drones need to broadcast a non-BOOT state so `_all_drones_ready()` counts them). However, beacons now always show `"SURVEY"` regardless of actual state. Fix: add `/{drone_id}/sm_state` publisher in `mission_logic_node` and subscriber in `p2p_sync_node`.
 
-2. **4 drones share one WorldModel → frontier exhaustion:** `ros2_adapter_v2.py` creates a single `WorldModel` shared by all 4 `BaselineLoop` instances. Once ~1 drone's worth of frontier is assigned, the other 3 have no frontiers left and stop moving. Fix: create one `WorldModel` per drone, or implement distance-based frontier assignment that reserves different regions.
+2. ~~4 drones share one WorldModel → frontier exhaustion~~ **Fixed [as-implemented]:** `ros2_adapter_v2.py` now builds one `WorldModel`/`DroneState`/ground-truth map per drone. Note this doesn't add sector-based deconfliction — with no bounded exploration, independent drones can still cover overlapping ground, just not by sharing a single instance's state anymore.
 
-3. **mission_cmd not acted on:** `ros2_adapter_v2.py` receives `mission_cmd` JSON (SWEEP_SECTOR, HOLD_POSITION, LAND_AND_SUBMIT, etc.) but discards it. BaselineLoop always runs its own planning regardless of the MAS coordinator's directives.
+3. **mission_cmd only partially acted on [as-implemented, partial]:** `HOLD_POSITION` (pause) and `LAND_AND_SUBMIT` (stop) are now actuated. `SWEEP_SECTOR`, `FILL_GAPS`, `VERIFY_PATH`, `STANDBY_FOR_TASK`, and `AWAIT_PATH_VERIFY` are still received but discarded — `Simulator`'s frontier scorer has no sector-bounded exploration mode to hand these to.
 
-4. **TaskResult never published by explorer:** `p2p_task_node.report_result()` exists but nothing calls it. After winning a VERIFY_TAG task, the explorer has no mechanism to signal completion back to the task node. The `busy` flag never clears unless the explorer directly calls `report_result()`.
+4. ~~TaskResult never published by explorer~~ **Fixed for VERIFY_TAG [as-implemented]:** `ros2_adapter_v2.py` now publishes `TaskResult` directly to `/team/task_result` when a drone reaches a `VERIFY_TAG` target (it can't call `p2p_task_node.report_result()` as a method — that node is a separate process — so it publishes the topic instead). This only covers `VERIFY_TAG`; `BECOME_PATH_VERIFIER` / `BECOME_VERIFIER` task types still get no result report from the adapter.
 
 5. **Belief store in p2p_sync_node vs mine_beliefs in mission_logic_node are separate:** `p2p_sync_node.belief_store` is the authoritative fused store, but `mission_logic_node.mine_beliefs` is populated from `/team/mine_delta` directly. These two copies can diverge; mission decisions are made from the secondary copy.
 
@@ -229,59 +236,72 @@ Current result: **94 passed, 4 skipped** (skipped = removed `coord_to_xy` helper
 
 ---
 
-## Integration Points with Kevin's waar_autonomy
+## Integration Points with waar_autonomy
 
 ### What MAS publishes → waar_autonomy consumes
 | Topic | Message | Publisher | Subscriber in waar_autonomy |
 |---|---|---|---|
-| `/{drone_id}/task_cmd` | `std_msgs/String` (JSON) | `p2p_task_node` | `ros2_adapter_v2._on_task_cmd()` |
-| `/{drone_id}/mission_cmd` | `std_msgs/String` (JSON) | `mission_logic_node` | `ros2_adapter_v2._on_mission_cmd()` (stored, not acted on) |
+| `/{drone_id}/task_cmd` | `std_msgs/String` (JSON) | `p2p_task_node` | `ros2_adapter_v2._make_task_cmd_handler()` |
+| `/{drone_id}/mission_cmd` | `std_msgs/String` (JSON) | `mission_logic_node` | `ros2_adapter_v2._make_mission_cmd_handler()` (`HOLD_POSITION`/`LAND_AND_SUBMIT` acted on; rest logged only) |
 
 ### What waar_autonomy publishes → MAS consumes
 | Topic | Message | Publisher | Subscriber in MAS |
 |---|---|---|---|
-| `/{drone_id}/pose` | `geometry_msgs/PoseStamped` | `ros2_adapter_v2` | `p2p_sync_node._on_local_pose()`, `p2p_task_node._on_local_pose()` |
-| `/team/pose_beacon` | `mas_interfaces/PoseBeacon` | **NOT YET PUBLISHED** (fix reverted) | `p2p_sync_node._on_pose_beacon()`, `mission_logic_node._on_pose_beacon()` |
-| `/{drone_id}/mine_candidates` | `mas_interfaces/MineBelief` | `ros2_adapter_v2.Ros2PerceptionAdapter` | `p2p_task_node._on_mine_candidate()` |
+| `/{drone_id}/pose` | `geometry_msgs/PoseStamped` | `ros2_adapter_v2._publish_pose()` | `p2p_sync_node._on_local_pose()`, `p2p_task_node._on_local_pose()` |
+| `/team/pose_beacon` | `mas_interfaces/PoseBeacon` | `ros2_adapter_v2._publish_pose()` | `p2p_sync_node._on_pose_beacon()`, `mission_logic_node._on_pose_beacon()` |
+| `/{drone_id}/mine_candidates` | `mas_interfaces/MineBelief` | `ros2_adapter_v2._publish_new_mines()` | `p2p_task_node._on_mine_candidate()` |
+| `/team/task_result` | `mas_interfaces/TaskResult` | `ros2_adapter_v2._report_task_result()` (VERIFY_TAG only) | `p2p_task_node._on_task_result()`, `mission_logic_node._on_task_result()` |
 
 ### What still needs to be connected
-1. **`/team/pose_beacon` publishing** — re-apply the reverted fix in `ros2_adapter_v2.py` so `Ros2NavigationAdapter.send_waypoint()` publishes a `PoseBeacon` to `/team/pose_beacon` after each position update.
+1. ~~`/team/pose_beacon` publishing~~ **Done [as-implemented]**.
 
-2. **`/{drone_id}/sm_state` bridge** — `mission_logic_node` should publish its current state as `std_msgs/String` on `/{drone_id}/sm_state`; `p2p_sync_node` should subscribe to update `my_state` so beacons carry the correct state string.
+2. **`/{drone_id}/sm_state` bridge** — `mission_logic_node` should publish its current state as `std_msgs/String` on `/{drone_id}/sm_state`; `p2p_sync_node` should subscribe to update `my_state`, and `ros2_adapter_v2` should subscribe too so `PoseBeacon.state` reflects the real state machine instead of a local guess.
 
-3. **Task result reporting** — after a VERIFY_TAG task completes, `ros2_adapter_v2` must call `p2p_task_node.report_result()` or publish a `TaskResult` to `/team/task_result` so the `busy` flag clears and mine beliefs are updated.
+3. ~~Task result reporting~~ **Done for VERIFY_TAG [as-implemented]** — `ros2_adapter_v2._report_task_result()` publishes `TaskResult` directly (it can't call `p2p_task_node.report_result()`, a separate process). `BECOME_PATH_VERIFIER`/`BECOME_VERIFIER` tasks still get no result.
 
-4. **Mission cmd actuation** — `ros2_adapter_v2._on_mission_cmd()` currently discards directives. At minimum, `HOLD_POSITION` and `LAND_AND_SUBMIT` should pause/stop the `BaselineLoop`.
+4. ~~Mission cmd actuation~~ **Minimum bar done [as-implemented]** — `HOLD_POSITION` and `LAND_AND_SUBMIT` are handled. `SWEEP_SECTOR`/`FILL_GAPS`/`VERIFY_PATH` need a sector-aware exploration mode in `Simulator` that doesn't exist yet; wiring the JSON through is not enough by itself.
 
-5. **Start position spread + interpolation** — re-apply the two reverted fixes (evenly spread drone start cols, `_NAV_MAX_STEP=2.0m` interpolation) to eliminate startup collisions and neighbor graph thrashing.
+5. ~~Start position spread + interpolation~~ **Not applicable to the current adapter** — `Simulator.DroneState` teleports one block per tick with no continuous position or velocity, so there's nothing to interpolate and no shared-space collision to spread apart (each drone has its own grid). This was written for the documented `BaselineLoop`-based design, which doesn't exist in this repo.
+
+6. **Arena scale reconciliation** — `coord_to_xy`'s `CELL_SIZE=1.0` placeholder means simulated block coordinates and `mission_logic_node`'s real 91.44m×24.38m arena assumptions don't actually line up. Needs an explicit decision (scale `CELL_SIZE` to match, resize the block grid, or something else) before geofence/collision guards mean anything against these poses.
 
 ---
 
 ## Next Steps (Prioritised)
 
-1. **Wire sm_state bridge** — add `/{drone_id}/sm_state` publisher (`std_msgs/String`) in `mission_logic_node._on_state_transition()` and subscriber in `p2p_sync_node` updating `self.my_state`; needed for accurate team state in beacons and convergence checks.
+1. **Wire sm_state bridge** — add `/{drone_id}/sm_state` publisher (`std_msgs/String`) in `mission_logic_node._on_state_transition()` and subscribers in `p2p_sync_node` (updating `self.my_state`) and `ros2_adapter_v2` (updating `PoseBeacon.state` instead of guessing); needed for accurate team state in beacons and convergence checks.
 
-2. **Fix frontier exhaustion** — either create one `WorldModel` per drone in `ros2_adapter_v2.py`, or add distance-based frontier assignment that reserves different arena strips for each drone; without this 3 of 4 drones are effectively idle.
+2. ~~Fix frontier exhaustion~~ **Done [as-implemented]** — `ros2_adapter_v2.py` builds one `WorldModel` per drone.
 
-3. **Wire task result reporting** — `ros2_adapter_v2` must publish `TaskResult` to `/team/task_result` when a VERIFY_TAG task completes; needed for mine belief updates, `busy` flag clearing, and auction registry cleanup.
+3. ~~Wire task result reporting~~ **Done for VERIFY_TAG [as-implemented]**.
 
-4. **Implement mission_cmd actuation** — `ros2_adapter_v2._on_mission_cmd()` currently discards all directives; at minimum handle `HOLD_POSITION` (pause `BaselineLoop`) and `LAND_AND_SUBMIT` (stop node).
+4. ~~Implement mission_cmd actuation~~ **Minimum bar done [as-implemented]** — `HOLD_POSITION`/`LAND_AND_SUBMIT` handled; sector-based directives still need a `Simulator`-side exploration mode before they can be actuated (see "Known limitations" above).
 
 5. **Add network delay simulation** — all sync and auction messages fire instantly in the current setup; add configurable per-message latency to test robustness of the auction timing and sync window protocol.
 
-6. **Fix PATH_VERIFY corridor waypoints** — `_cmd_path_verify()` sends the 4 corners of the full arena as waypoints; should send a straight X-axis corridor (`[[0, arena_h/2], [arena_w, arena_h/2]]`) matching IARC scoring expectations.
+6. **Fix PATH_VERIFY corridor waypoints** — `_cmd_path_verify()` sends the 4 corners of the full arena as waypoints; should send a straight X-axis corridor (`[[0, arena_h/2], [arena_w, arena_h/2]]`) matching IARC scoring expectations. Note `ros2_adapter_v2` doesn't act on `VERIFY_PATH` task_cmds at all yet, so this is blocked on more than just the waypoint shape.
 
 7. **Fix delta watermark** — replace `get_delta_since(count)` with per-peer seq cursors in `BeliefStore` to avoid missing updated (not new) beliefs.
 
 8. **Fix `_all_drones_ready()` race at startup** — increase the stale threshold to 10 s for the first BOOT→SURVEY check, or add a configurable `boot_timeout` parameter.
 
+9. **Reconcile arena scale** — `ros2_adapter_v2`'s `CELL_SIZE=1.0` placeholder doesn't match `mission_logic_node`'s real 91.44m×24.38m arena assumption. Needs an explicit decision before geofence/collision guards are meaningful.
+
 ---
 
 ## Integration History
 
-Summary of what was done to get the MAS stack and waar_autonomy talking to each other:
+The section below described a full end-to-end integration (PoseBeacon publishing, spread start positions, interpolation, a verified BOOT→FINISH run) as something that had already happened, written against a `BaselineLoop`-based adapter. Neither that adapter nor `BaselineLoop` itself ever existed in this repo — there is no commit touching `ros2_adapter_v2.py` in this repo's git history prior to it being written against `Simulator` instead. Treat the bullets below as the original design intent, not as things that happened here.
 
-- **`ros2_adapter_v2.py` created** to bridge Kevin's `BaselineLoop` (waar_autonomy) to ROS2 topics; wraps `NavigationPort` and `PerceptionPort`, drives all 4 drones from one `Ros2ExplorerNode`.
+- ~~`ros2_adapter_v2.py` created~~ to bridge *Kevin's `BaselineLoop`* (waar_autonomy) to ROS2 topics — described, never built. What exists now bridges `application.simulator.Simulator` instead (see "ros2_adapter_v2 (waar_autonomy) — [as-implemented]" above), which has no `NavigationPort`/`PerceptionPort` wrapping, no continuous XY position, and no built-in collision avoidance.
+
+- PoseBeacon publishing, start-position spread, and position interpolation as described below were written for the `BaselineLoop` design and do not apply to `Simulator`'s block-teleport movement model. PoseBeacon publishing *is* implemented in the current adapter (see "What waar_autonomy publishes → MAS consumes" above); the other two aren't meaningful for this architecture.
+
+- `p2p_sync_node.my_state` initialised to `"SURVEY"`, `R_COLLISION` reduced to 0.8m, and `stub_explorer.py` removed from `team_launch.py` — these are changes to the MAS-side packages themselves, independent of which explorer/adapter is running, and remain accurate.
+
+- The "full end-to-end mission verified" claim below has not been re-verified against the current `ros2_adapter_v2.py` — it was never run, since the file didn't exist. Verifying `team_launch.py` + the current `ros2_adapter_v2.py` together is still open work.
+
+Original (unverified against this repo) narrative, preserved for context:
 
 - **PoseBeacon publishing added** to `Ros2NavigationAdapter.send_waypoint()` — publishes `/team/pose_beacon` (in addition to `/{drone_id}/pose`) on every position update so `p2p_sync_node` and `mission_logic_node` receive real drone positions; without this the neighbor graph was permanently empty.
 
