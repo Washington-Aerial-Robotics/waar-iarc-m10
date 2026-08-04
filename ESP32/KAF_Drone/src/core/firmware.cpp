@@ -84,7 +84,7 @@ unsigned short firmware_handlePersistents( char* buffer, const unsigned short le
         for( unsigned char i = 0; i < firmware.persistentCount; i++ ) {
           const unsigned char idx = firmware.persistents[i];
           DPRINTF( "[W] Persistent Write: Name=\"%s\", Location=%04x->%04x, Length=%u\n", 
-              firmware.peripherals[idx].memory, firmware.peripherals[idx].name, &buffer[index], firmware.peripherals[idx].persist  );
+              firmware.peripherals[idx].name, firmware.peripherals[idx].memory, &buffer[index], firmware.peripherals[idx].persist  );
           memcpy( &buffer[index], firmware.peripherals[idx].memory, firmware.peripherals[idx].persist );
           index += firmware.peripherals[idx].persist;
         }

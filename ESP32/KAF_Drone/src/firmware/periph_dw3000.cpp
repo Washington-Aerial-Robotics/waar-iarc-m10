@@ -91,8 +91,8 @@ static void processRangingData( unsigned char devID, unsigned int tof1, unsigned
 }
 
 void peripheral_dw3000Loop() {
-  bool sendSuccess = false;
-  if( false ) {//dw.working
+  /*bool sendSuccess = false;
+  if( dw.working ) {
     entity current;
     dw.broadcastIndex = com_getEntity( &current, dw.broadcastIndex );
     if( dw.broadcastIndex == MAXBYTE ) {
@@ -161,7 +161,7 @@ void peripheral_dw3000Loop() {
         }
       }
     }
-  }
+  }*/
 }
 
 void peripheral_dw3000Init() {

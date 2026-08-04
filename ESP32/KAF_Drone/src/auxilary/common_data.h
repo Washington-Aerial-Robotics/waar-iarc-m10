@@ -3,9 +3,9 @@
 #define DW_SS     4 
 #define MPU_SDA  21
 #define MPU_SCL  22
-#define UART1RX  25
-#define UART1TX  26
-#define ESC_PINS 12, 13, 14, 15
+#define UART1RX  16
+#define UART1TX  17
+#define ESC_PINS 25, 26, 32, 33
 
 #define COMS_BUFFER       common_coms_buffer
 #define FLIGHT_BUFFER     common_imu

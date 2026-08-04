@@ -79,7 +79,7 @@ bool estimation_step( coordinate* estimate ) {
     if( sensor->baro.update ) {
       baroZ = baro2Altitude( flight_filterSensor( CALIB_BARO_T, sensor->baro.temperature ),
           flight_filterSensor( CALIB_BARO_P, sensor->baro.pressure ), estimation.baroP0 );
-      DPRINTF( "[E] Barometer Values P=%.3f, T=%.3f, H=%.3f, Z=%.3f",
+      DPRINTF( "[E] Barometer Values P=%.3f, T=%.3f, H=%.3f, Z=%.3f\n",
           sensor->baro.pressure, sensor->baro.temperature, sensor->baro.humidity, baroZ );
     }
     if( sensor->gps.update ) {
