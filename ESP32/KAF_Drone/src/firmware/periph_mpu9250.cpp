@@ -24,6 +24,18 @@
 extern FLIGHT_BUFFERTYPE;
 
 static struct {
+  struct {                       //PERSISTENT MAGNETOMETER CALIBRATION (hard/soft-iron matrix, saved to disk)
+    double A[3][3] = {
+      { 1,        0.018,    0.025637 },
+      { 0.02919,  1,       -0.01586  },
+      { -0.0256, -0.158,    1        }
+    };
+    double b[3] = {
+      -250.7,
+      -270,
+      -1409
+    };
+  } magCal;
   bool imuworking = false;
   bool magworking = false;
   unsigned int mpuMissCount = 0;
@@ -75,6 +87,10 @@ void peripheral_mpu9250Loop() {
     if( Wire.requestFrom( AK_I2C, AK_READ_SIZE, true ) == AK_READ_SIZE ) {
       Wire.readBytes( mpu.magBytes, AK_READ_SIZE );
       ITRVEC3( q ) FLIGHT_BUFFER.magInput.f[q] = (signed short)( mpu.magBytes[ q * 2 ] << 8 | mpu.magBytes[ q * 2 + 1 ] );
+      //apply calibration matrix: calibrated = A * ( raw - b )
+      double magRaw[3];
+      ITRVEC3( q ) magRaw[q] = FLIGHT_BUFFER.magInput.f[q] - mpu.magCal.b[q];
+      ITRVEC3( q ) FLIGHT_BUFFER.magInput.f[q] = mpu.magCal.A[q][0] * magRaw[0] + mpu.magCal.A[q][1] * magRaw[1] + mpu.magCal.A[q][2] * magRaw[2];
       FLIGHT_BUFFER.magUpdate = true;
       mpu.magMissCount = 0;
       DPRINTF( "[P] AK8963 Magnetometer: Value=[ %.3f, %.3f, %.3f ]\n", FLIGHT_BUFFER.magInput.x, 
@@ -86,7 +102,7 @@ void peripheral_mpu9250Loop() {
 }
 
 void peripheral_mpu9250Init() {
-  firmware_registerPeripheral( { "mpu9250", 0, sizeof( mpu ), &mpu, &peripheral_mpu9250Init, &peripheral_mpu9250Loop } );
+  firmware_registerPeripheral( { "mpu9250", sizeof( mpu.magCal ), sizeof( mpu ), &mpu, &peripheral_mpu9250Init, &peripheral_mpu9250Loop } );
   DPRINTF( "[P] Initializing MPU9250\n" );
   mpu.mpuMissCount = 0;
   //init wire
