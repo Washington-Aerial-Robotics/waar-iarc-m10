@@ -1,6 +1,6 @@
 # Multi-Agent Coordination System — IARC Mission 10
 
-Four drones coordinate to find and verify mines in a 91.44 m x 24.38 m arena (300 ft x 80 ft) within 7 minutes. Every drone runs three ROS2 nodes (sync, task, mission) using a fully decentralised architecture — no central server, no shared clock. A separate adapter, `ros2_adapter_v2.py`, bridges `waar_autonomy`'s single-drone `Simulator` planner to the MAS topics. (Earlier docs described this adapter as bridging a `BaselineLoop` class — that class doesn't exist in this repo; `Simulator` is what's actually there. See `waar_autonomy/README.md` and `mas_coordinator/CLAUDE.md` for the gap between the two.)
+Four drones coordinate to find and verify mines in a 91.44 m x 24.38 m arena (300 ft x 80 ft) within 7 minutes. Every drone runs three ROS2 nodes (sync, task, mission) using a fully decentralised architecture — no central server, no shared clock. A separate adapter bridges Kevin's `waar_autonomy` BaselineLoop planner to the MAS topics.
 
 ---
 
@@ -38,15 +38,13 @@ Four drones coordinate to find and verify mines in a 91.44 m x 24.38 m arena (30
           | /{drone_id}/task_cmd  | /{drone_id}/mission_cmd
           |                       |
 +-------------------------------------------------------------------------------+
-|                       Autonomy Layer  (waar_autonomy)                         |
+|                    Autonomy Layer  (waar_autonomy, Kevin)                     |
 |                                                                               |
-|   ros2_adapter_v2.py:  Ros2ExplorerNode drives one Simulator per drone       |
+|   ros2_adapter_v2.py:  Ros2ExplorerNode drives BaselineLoop for all 4 drones |
 |     - Publishes /{drone_id}/pose (PoseStamped) + /team/pose_beacon (PoseBeacon)
-|     - Publishes /{drone_id}/mine_candidates on newly-detected HAZARD cells   |
-|     - Subscribes /{drone_id}/task_cmd  (VERIFY_TAG interrupts exploration,   |
-|       reports TaskResult to /team/task_result on completion)                |
-|     - Subscribes /{drone_id}/mission_cmd  (HOLD_POSITION, LAND_AND_SUBMIT    |
-|       acted on; SWEEP_SECTOR/FILL_GAPS/VERIFY_PATH logged only)              |
+|     - Publishes /{drone_id}/mine_candidates on hazard_evidence >= 0.5        |
+|     - Subscribes /{drone_id}/task_cmd  (VERIFY_TAG interrupts exploration)   |
+|     - Subscribes /{drone_id}/mission_cmd  (stored, not yet acted on)         |
 +-------------------------------------------------------------------------------+
 ```
 
@@ -73,7 +71,7 @@ Four drones coordinate to find and verify mines in a 91.44 m x 24.38 m arena (30
 | `/team/mine_delta` | `MineDelta` | `p2p_sync_node` | `p2p_sync_node`, `mission_logic_node` |
 | `/team/task_announce` | `TaskAnnounce` | `p2p_task_node`, `mission_logic_node` | `p2p_task_node` |
 | `/team/task_claim` | `TaskClaim` | `p2p_task_node` | `p2p_task_node` |
-| `/team/task_result` | `TaskResult` | `ros2_adapter_v2` (VERIFY_TAG only) | `p2p_task_node`, `mission_logic_node` |
+| `/team/task_result` | `TaskResult` | explorer (TODO) | `p2p_task_node`, `mission_logic_node` |
 | `/{drone_id}/pose` | `PoseStamped` | `ros2_adapter_v2` | `p2p_sync_node`, `p2p_task_node` |
 | `/{drone_id}/mine_candidates` | `MineBelief` | `ros2_adapter_v2` | `p2p_task_node` |
 | `/{drone_id}/task_cmd` | `String` (JSON) | `p2p_task_node` | `ros2_adapter_v2` |
@@ -111,12 +109,11 @@ ros2 launch mas_mission team_launch.py
 ros2 launch mas_mission team_launch.py mission_duration:=420.0 arena_width:=91.44 arena_height:=24.38
 ```
 
-### Launch explorer (waar_autonomy)
+### Launch explorer (Kevin's waar_autonomy)
 ```bash
 export PYTHONPATH=/path/to/waar_autonomy/src:$PYTHONPATH
 python3 waar_autonomy/src/adapters/ros2_adapter_v2.py
 ```
-Drives one `Simulator` per drone (not the `BaselineLoop` some older docs describe — that class doesn't exist in this repo). See `waar_autonomy/README.md` for its "Known limitations" against what mas_coordinator expects.
 
 ### Monitor mission state
 ```bash
@@ -151,15 +148,15 @@ python3 -m pytest tests/ -v
 - Mine belief fusion: seq-LWW, confirmed-sticky, confirmed beats rejected on equal seq
 - Distributed task auction with no-bidder retry and duplicate mine guard
 - 6-layer BT priority selector with collision, geofence, and failure guards
-- `ros2_adapter_v2.py` implemented, bridging `waar_autonomy`'s actual `Simulator` planner (not the previously-documented `BaselineLoop`, which doesn't exist in this repo) — one `Simulator` per drone, VERIFY_TAG task interrupt + TaskResult reporting, HOLD_POSITION/LAND_AND_SUBMIT actuation
-- PoseBeacon published to `/team/pose_beacon` so MAS sees drone positions
+- Integration with waar_autonomy BaselineLoop via `ros2_adapter_v2.py`
+- PoseBeacon published to `/team/pose_beacon` so MAS sees real drone positions
 - 94 unit tests passing
 
 ### Known Issues
-- Drone state in PoseBeacon is a local guess in `ros2_adapter_v2` (`"VERIFY_TAG"` vs `"SURVEY"`) — sm_state bridge from `mission_logic_node` still not wired
-- Sector-constrained directives (`SWEEP_SECTOR`, `FILL_GAPS`, `VERIFY_PATH`) are received by `ros2_adapter_v2` but not acted on — `Simulator`'s frontier scorer has no bounded-sector exploration mode
-- `BECOME_PATH_VERIFIER`/`BECOME_VERIFIER` tasks get no `TaskResult` from `ros2_adapter_v2` — only `VERIFY_TAG` is handled
-- Arena scale mismatch: `ros2_adapter_v2`'s block coordinates report as a ~20m x 15m box (`CELL_SIZE=1.0` placeholder), not the real 91.44m x 24.38m arena `mission_logic_node` assumes — geofence/collision guards aren't meaningful against these poses yet
+- Drone state in PoseBeacon is hardcoded to `"SURVEY"` — sm_state bridge not wired
+- All 4 drones share one WorldModel in ros2_adapter_v2; frontiers exhaust after ~1 drone explores the area, leaving the other 3 idle
+- Task result not reported back from explorer — `busy` flag in p2p_task_node never clears
+- `mission_cmd` (HOLD_POSITION, LAND_AND_SUBMIT, SWEEP_SECTOR) received but not acted on by ros2_adapter_v2
 - Network delay not simulated — sync windows fire instantly
 
 ---
@@ -200,5 +197,5 @@ tests/
   test_edge_cases.py        Arena dims, 420s, no-bidder retry, dropout, belief conflict
 
 waar_autonomy/src/adapters/
-  ros2_adapter_v2.py        Bridges Simulator to ROS2: pose, beacons, mines, task cmds, task results
+  ros2_adapter_v2.py        Bridges BaselineLoop to ROS2: pose, beacons, mines, task cmds
 ```
