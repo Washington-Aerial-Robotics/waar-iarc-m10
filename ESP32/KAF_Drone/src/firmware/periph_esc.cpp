@@ -5,21 +5,21 @@
 #include "altdef.h"
 #else
 #include <Arduino.h>
-#include "../lib/ESP32Servo/ESP32Servo.h"
+#include <DShotRMT.h>
 #endif
 
 #define BOUND( V, LB, UB )    V = V > UB ? UB : ( V < LB ? LB : V )
-#define ESC_ARM                500
-#define ESC_MAX               2000
-#define ESC_MIN               1000
-#define ESC_RAMP                 1
-#define ESC_ARMEDRAMP            1
+#define ESC_DSHOT_MODE      DSHOT300
+#define ESC_BIDIRECTIONAL      false
+#define ESC_RAMP                0.1F    // max throttle percent change per loop iteration
+#define ESC_ARM_FRAMES           200    // zero-throttle frames before ESCs are considered armed (~2s @ 100Hz flight loop, see FLIGHT_TASK_PERIOD_MS in periph_freertos.cpp)
 
 static struct {
   bool motorEnabled = false;
+  unsigned int armFrames = 0;
   unsigned int pins[ FPARLEN( kafenv.cmd.motors ) ] = { ESC_PINS };
-  unsigned short setpoints[ FPARLEN( kafenv.cmd.motors ) ];
-  Servo servos[ FPARLEN( kafenv.cmd.motors ) ];
+  float setpoints[ FPARLEN( kafenv.cmd.motors ) ];
+  DShotRMT* motors[ FPARLEN( kafenv.cmd.motors ) ];
 } escs;
 
 void peripheral_escsLoop() {
@@ -27,33 +27,32 @@ void peripheral_escsLoop() {
     if( escs.motorEnabled ) {
       DPRINTF( "[P] Run ESCs: Status=ACTIVE\n" );
       for( int i = 0; i < FPARLEN( kafenv.cmd.motors ); i++ ) {
-        short value = ( ( short )( ( ESC_MAX - ESC_MIN ) * kafenv.cmd.motors[i] + ESC_MIN ) ) - ( short )escs.setpoints[i];
+        float target = kafenv.cmd.motors[i] * 100.0F;
+        BOUND( target, 0.0F, 100.0F );
+        float value = target - escs.setpoints[i];
         BOUND( value, -ESC_RAMP, ESC_RAMP );
         value += escs.setpoints[i];
-        BOUND( value, ESC_MIN, ESC_MAX );
-        if( value != escs.setpoints[i] ) {
-          escs.setpoints[i] = value;
-          escs.servos[i].writeMicroseconds( value );
-        }
+        BOUND( value, 0.0F, 100.0F );
+        escs.setpoints[i] = value;
+        escs.motors[i]->sendThrottlePercent( value );
       }
     } else {
-      DPRINTF( "[P] Run ESCs: Status=RAMP_UP\n" );
-      escs.motorEnabled = true;
+      DPRINTF( "[P] Run ESCs: Status=ARMING\n" );
       for( int i = 0; i < FPARLEN( kafenv.cmd.motors ); i++ ) {
-        if( escs.setpoints[i] < ESC_MIN ) {
-          escs.setpoints[i] += ESC_ARMEDRAMP;
-          escs.servos[i].writeMicroseconds( escs.setpoints[i] );
-          escs.motorEnabled = false;
-        }
+        escs.motors[i]->sendThrottlePercent( 0.0F );
+      }
+      if( ++escs.armFrames >= ESC_ARM_FRAMES ) {
+        escs.motorEnabled = true;
       }
     }
-    DPRINTF( "[P] ESC Setpoint: Motors=[ %d, %d, %d, %d ]\n", escs.setpoints[0], escs.setpoints[1], escs.setpoints[2], escs.setpoints[3] );
+    DPRINTF( "[P] ESC Setpoint: Motors=[ %.1f, %.1f, %.1f, %.1f ]\n", escs.setpoints[0], escs.setpoints[1], escs.setpoints[2], escs.setpoints[3] );
   } else {
     DPRINTF( "[P] Run ESCs: Status=DISABLED\n" );
     escs.motorEnabled = false;
+    escs.armFrames = 0;
     for( int i = 0; i < FPARLEN( kafenv.cmd.motors ); i++ ) {
-      escs.setpoints[i] = ESC_ARM;
-      escs.servos[i].writeMicroseconds( ESC_ARM );
+      escs.setpoints[i] = 0.0F;
+      escs.motors[i]->sendThrottlePercent( 0.0F );
     }
   }
 }
@@ -62,12 +61,11 @@ void peripheral_escsInit() {
   firmware_registerPeripheral( { "escs", 0, sizeof( escs ), &escs, &peripheral_escsInit, &peripheral_escsLoop } );
   DPRINTF( "[P] Initializing ESCs\n" );
   escs.motorEnabled = false;
-  //arm all the pins and set default values
+  escs.armFrames = 0;
   for( int i = 0; i < FPARLEN( kafenv.cmd.motors ); i++ ) {
-    pinMode( escs.pins[i], OUTPUT );
-    escs.servos[i].attach( escs.pins[i] );
-    escs.servos[i].writeMicroseconds( ESC_ARM );
-    digitalWrite( escs.pins[i], HIGH ); 
-    escs.setpoints[i] = ESC_ARM;
+    escs.motors[i] = new DShotRMT( ( uint16_t )escs.pins[i], ESC_DSHOT_MODE, ESC_BIDIRECTIONAL );
+    escs.motors[i]->begin();
+    escs.motors[i]->sendThrottlePercent( 0.0F );
+    escs.setpoints[i] = 0.0F;
   }
 }
