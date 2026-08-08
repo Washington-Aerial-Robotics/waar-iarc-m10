@@ -81,9 +81,11 @@ void peripheral_samm10qLoop() {
         DPRINTF( "[P] GPS Positioning Data: Value=[ %.3f, %.3f, %.3f ]", 
             SENSOR_BUFFER.gps.position.x, SENSOR_BUFFER.gps.position.y, SENSOR_BUFFER.gps.position.z );
       } else {
+        //first valid fix becomes the reference origin for all subsequent relative positions
         sam.coords[0] = SENSOR_BUFFER.gps.latitude;
         sam.coords[1] = SENSOR_BUFFER.gps.longitude;
         sam.coords[2] = SENSOR_BUFFER.gps.altitude;
+        sam.validoffset = true;
       }
     }
     sam.dataLen = 0;
