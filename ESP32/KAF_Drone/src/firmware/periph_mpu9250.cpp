@@ -27,20 +27,20 @@ extern FLIGHT_BUFFERTYPE;
 
 static struct {
   struct {                       //PERSISTENT MAGNETOMETER CALIBRATION (hard/soft-iron matrix, saved to disk)
-    //TEMPORARY: identity/zero while re-collecting a calibration sweep against the corrected axis
-    //mapping - the previous A/b values were fit against the old, unmapped raw axes and are stale.
+    //Fit via tests/magnetometer_calibration.py against raw_mag_log_v2.txt - calibrated
+    //magnitude mean=1.00, std=0.08 (~8% relative spread) across the sweep.
     //IMPORTANT: the DPRINTF below logs magInput AFTER this matrix is applied - if you ever need to
     //recollect calibration data again in the future, reset A/b to identity/zero first, or you'll be
     //fitting an ellipsoid to already-calibrated (nearly spherical) data instead of raw data.
     double A[3][3] = {
-      { 1, 0, 0 },
-      { 0, 1, 0 },
-      { 0, 0, 1 }
+      {  0.003722,  0.000013,  0.000415 },
+      {  0.000013,  0.004297, -0.000266 },
+      {  0.000415, -0.000266,  0.004518 }
     };
     double b[3] = {
-      0,
-      0,
-      0
+       173.166221,
+       165.081628,
+      -420.252058
     };
   } magCal;
   bool imuworking = false;
