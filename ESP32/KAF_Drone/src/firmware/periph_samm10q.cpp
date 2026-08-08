@@ -69,7 +69,7 @@ void peripheral_samm10qLoop() {
       char upperlat[] = { lat[0], lat[1], 0 };
       SENSOR_BUFFER.gps.latitude = ( strtod( upperlat, NULLPTR ) + strtod( &lat[2], NULLPTR ) / 60 ) * ( latdir[0] == 'S' ? -1 : 1 );
       char upperlng[] = { lng[0], lng[1], lng[2], 0 };
-      SENSOR_BUFFER.gps.longitude = ( strtod( upperlng, NULLPTR ) + strtod( &lat[3], NULLPTR ) / 60 ) * ( lngdir[0] == 'W' ? -1 : 1 );
+      SENSOR_BUFFER.gps.longitude = ( strtod( upperlng, NULLPTR ) + strtod( &lng[3], NULLPTR ) / 60 ) * ( lngdir[0] == 'W' ? -1 : 1 );
       SENSOR_BUFFER.gps.altitude = strtod( alt, NULLPTR );
       DPRINTF( "[P] GPS Position: Latitude=%.3f, Longitude=%.3f, Altitude=%.3f", 
           SENSOR_BUFFER.gps.latitude, SENSOR_BUFFER.gps.longitude, SENSOR_BUFFER.gps.altitude );
@@ -91,7 +91,7 @@ void peripheral_samm10qLoop() {
 }
 
 void peripheral_samm10qInit() {
-  firmware_registerPeripheral( { "samm10q", 0, sizeof( sam ), &sam, &peripheral_samm10qLoop, &peripheral_samm10qInit } );
+  firmware_registerPeripheral( { "samm10q", 0, sizeof( sam ), &sam, &peripheral_samm10qInit, &peripheral_samm10qLoop } );
   DPRINTF( "[P] Initializing SAMM10Q\n" );
   Serial1.begin( 9600, SERIAL_8N1, UART1RX, UART1TX );
   sam.dataLen = 0;
