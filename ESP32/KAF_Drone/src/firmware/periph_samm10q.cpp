@@ -10,7 +10,8 @@
 #include <string.h>
 #endif
 
-#define RADIUS 111.11111111111111111111111111111111111111111111111111
+#define METERS_PER_DEGREE 111111.0
+#define PI 3.14159265359
 
 extern SENSOR_BUFFERTYPE;
 
@@ -74,8 +75,9 @@ void peripheral_samm10qLoop() {
       DPRINTF( "[P] GPS Position: Latitude=%.3f, Longitude=%.3f, Altitude=%.3f", 
           SENSOR_BUFFER.gps.latitude, SENSOR_BUFFER.gps.longitude, SENSOR_BUFFER.gps.altitude );
       if( sam.validoffset ) {
-        SENSOR_BUFFER.gps.position.x = ( float )( RADIUS * ( SENSOR_BUFFER.gps.latitude - sam.coords[0] ) );
-        SENSOR_BUFFER.gps.position.y = ( float )( RADIUS * ( SENSOR_BUFFER.gps.longitude - sam.coords[1] ) * cos( SENSOR_BUFFER.gps.latitude ) );
+        const double latitudeRadians = SENSOR_BUFFER.gps.latitude * PI / 180.0;
+        SENSOR_BUFFER.gps.position.x = ( float )( METERS_PER_DEGREE * ( SENSOR_BUFFER.gps.longitude - sam.coords[1] ) * cos( latitudeRadians ) ); //east
+        SENSOR_BUFFER.gps.position.y = ( float )( METERS_PER_DEGREE * ( SENSOR_BUFFER.gps.latitude - sam.coords[0] ) ); //north
         SENSOR_BUFFER.gps.position.z = ( float )( SENSOR_BUFFER.gps.altitude - sam.coords[2] );
         SENSOR_BUFFER.gps.update = true;
         DPRINTF( "[P] GPS Positioning Data: Value=[ %.3f, %.3f, %.3f ]", 
@@ -95,7 +97,7 @@ void peripheral_samm10qLoop() {
 void peripheral_samm10qInit() {
   firmware_registerPeripheral( { "samm10q", 0, sizeof( sam ), &sam, &peripheral_samm10qInit, &peripheral_samm10qLoop } );
   DPRINTF( "[P] Initializing SAMM10Q\n" );
-  Serial1.begin( 9600, SERIAL_8N1, UART1RX, UART1TX );
+  Serial1.begin( 115200, SERIAL_8N1, UART1RX, UART1TX );
   sam.dataLen = 0;
   sam.readIndex = 0;
   memset( sam.readData, 0, sizeof( sam.readData ) );
