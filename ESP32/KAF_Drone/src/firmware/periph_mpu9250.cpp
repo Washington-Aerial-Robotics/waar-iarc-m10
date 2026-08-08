@@ -25,15 +25,17 @@ extern FLIGHT_BUFFERTYPE;
 
 static struct {
   struct {                       //PERSISTENT MAGNETOMETER CALIBRATION (hard/soft-iron matrix, saved to disk)
+    //TEMPORARY: identity/zero while re-collecting a calibration sweep against the corrected axis
+    //mapping - the previous A/b values were fit against the old, unmapped raw axes and are stale.
     double A[3][3] = {
-      { 1,        0.018,    0.025637 },
-      { 0.02919,  1,       -0.01586  },
-      { -0.0256, -0.158,    1        }
+      { 1, 0, 0 },
+      { 0, 1, 0 },
+      { 0, 0, 1 }
     };
     double b[3] = {
-      -250.7,
-      -270,
-      -1409
+      0,
+      0,
+      0
     };
   } magCal;
   bool imuworking = false;
@@ -87,7 +89,8 @@ void peripheral_mpu9250Loop() {
     if( Wire.requestFrom( AK_I2C, AK_READ_SIZE, true ) == AK_READ_SIZE ) {
       Wire.readBytes( mpu.magBytes, AK_READ_SIZE );
       signed short magAxisRaw[3];
-      ITRVEC3( q ) magAxisRaw[q] = (signed short)( mpu.magBytes[ q * 2 ] << 8 | mpu.magBytes[ q * 2 + 1 ] );
+      // AK8963 data registers are little-endian: HXL is followed by HXH.
+      ITRVEC3( q ) magAxisRaw[q] = (signed short)( mpu.magBytes[ q * 2 + 1 ] << 8 | mpu.magBytes[ q * 2 ] );
       //the AK8963 magnetometer die has its own axis frame relative to the MPU9250 accel/gyro die
       //(X/Y swapped, Z inverted); combined here with the same board-mounting correction applied to accel/gyro
       FLIGHT_BUFFER.magInput.x = -magAxisRaw[1];
