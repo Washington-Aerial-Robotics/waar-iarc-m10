@@ -71,11 +71,12 @@ def fit_ellipsoid(points):
 def calibration_from_ellipsoid(m, n):
     center = -np.linalg.solve(m, n)  # hard-iron offset
     k = 1.0 - n @ center
-    if k <= 0:
-        raise ValueError(
-            "Degenerate ellipsoid fit (k <= 0) - check the input data covers "
-            "a wide range of orientations, not just a small cluster."
-        )
+    # k can legitimately come out negative: the least-squares solve has no way to
+    # know in advance which overall sign our fixed "-1" normalization will land on,
+    # and p^T M p + 2n^Tp - 1 = 0 / p^T(-M)p + 2(-n)^Tp + 1 = 0 describe the same
+    # quadric. When that happens M is negative-definite too (same sign as k), so
+    # M/k is still positive-definite - only k <= 0 with M NOT matching its sign is
+    # actually degenerate, which the eigenvalue check below catches directly.
     eigvals, eigvecs = np.linalg.eigh(m / k)
     if np.any(eigvals <= 0):
         raise ValueError(
