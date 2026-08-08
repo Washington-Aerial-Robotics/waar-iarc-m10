@@ -56,6 +56,16 @@ struct Servo {
   void ( *attach )( int );
   void ( *writeMicroseconds )( int );
 };
+#define DSHOT150 0
+#define DSHOT300 1
+#define DSHOT600 2
+#define DSHOT1200 3
+#define uint16_t unsigned short
+struct DShotRMT {
+  DShotRMT( uint16_t, int, bool );
+  void ( *begin )();
+  void ( *sendThrottlePercent )( float );
+};
 struct {
   void( *begin )( int, int );
   void( *setTimeOut )( int );
