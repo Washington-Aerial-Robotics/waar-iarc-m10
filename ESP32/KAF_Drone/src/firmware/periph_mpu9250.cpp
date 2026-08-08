@@ -86,7 +86,13 @@ void peripheral_mpu9250Loop() {
     Wire.endTransmission( false );
     if( Wire.requestFrom( AK_I2C, AK_READ_SIZE, true ) == AK_READ_SIZE ) {
       Wire.readBytes( mpu.magBytes, AK_READ_SIZE );
-      ITRVEC3( q ) FLIGHT_BUFFER.magInput.f[q] = (signed short)( mpu.magBytes[ q * 2 ] << 8 | mpu.magBytes[ q * 2 + 1 ] );
+      signed short magAxisRaw[3];
+      ITRVEC3( q ) magAxisRaw[q] = (signed short)( mpu.magBytes[ q * 2 ] << 8 | mpu.magBytes[ q * 2 + 1 ] );
+      //the AK8963 magnetometer die has its own axis frame relative to the MPU9250 accel/gyro die
+      //(X/Y swapped, Z inverted); combined here with the same board-mounting correction applied to accel/gyro
+      FLIGHT_BUFFER.magInput.x = -magAxisRaw[1];
+      FLIGHT_BUFFER.magInput.y =  magAxisRaw[0];
+      FLIGHT_BUFFER.magInput.z =  magAxisRaw[2];
       //apply calibration matrix: calibrated = A * ( raw - b )
       double magRaw[3];
       ITRVEC3( q ) magRaw[q] = FLIGHT_BUFFER.magInput.f[q] - mpu.magCal.b[q];
