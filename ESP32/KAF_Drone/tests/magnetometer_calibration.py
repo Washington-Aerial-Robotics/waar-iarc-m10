@@ -82,7 +82,13 @@ def calibration_from_ellipsoid(m, n):
             "Non-positive-definite fit - the sample orientations likely "
             "don't span enough of the sphere for a reliable fit."
         )
-    soft_iron = np.diag(np.sqrt(eigvals)) @ eigvecs.T
+    # Symmetric PD square root of M/k, NOT sqrt(eigvals) @ eigvecs.T - the latter
+    # is a valid ellipsoid->sphere map too, but picks an arbitrary rotation of the
+    # output frame (whatever orientation eigh happens to return). The symmetric
+    # square root is the unique solution that reduces to identity when there is
+    # no real distortion, so it corrects distortion without silently rotating
+    # the board's axis convention (which would otherwise corrupt yaw).
+    soft_iron = eigvecs @ np.diag(np.sqrt(eigvals)) @ eigvecs.T
     return soft_iron, center
 
 
