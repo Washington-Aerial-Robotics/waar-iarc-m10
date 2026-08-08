@@ -5,17 +5,19 @@ extern void peripheral_mpu9250Init();
 extern void peripheral_mpu9250Loop();
 extern void peripheral_escsInit();
 extern void peripheral_escsLoop();
-extern void estimation_reset();
+extern peripheral estimation_reset();
 extern bool estimation_step( coordinate* write );
 extern imu common_imu;
+extern void peripheral_serialStart( unsigned int baudrate );
 
 void setup() {
   //init
+  peripheral_serialStart( 115200 );
   firmware_reset();
   peripheral_commonInit();
   peripheral_mpu9250Init();
   peripheral_escsInit();
-  estimation_reset();
+  firmware_registerPeripheral( estimation_reset() );
   flight_positionEstimator( &estimation_step );
 }
 
