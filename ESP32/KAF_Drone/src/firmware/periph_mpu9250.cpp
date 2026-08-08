@@ -12,9 +12,11 @@
 #define MPU_I2C                                0x68
 #define AK_I2C                                 0x0C
 #define MPU_READ_SIZE                            14
-#define AK_READ_SIZE                              7
+#define AK_READ_SIZE                              8    //ST1, HXL, HXH, HYL, HYH, HZL, HZH, ST2
 #define MPU_READ_ADDRESS                       0x3B
-#define AK_READ_ADDRESS                        0x03
+#define AK_READ_ADDRESS                        0x02    //ST1 (DRDY) - burst read must end at ST2 to latch the next sample
+#define AK_ST1_DRDY                            0x01
+#define AK_ST2_HOFL                            0x08
 #define MPU_ACCEL_RANGE                        0x08     //0x00              0x08             0x10              0x18
 #define MPU_GYRO_RANGE                         0x08     //0x00              0x08             0x10              0x18
 #define MPU_ACCEL_SCALE 9.81                /  8192.0   //2g       16384.0, 4g       8192.0, 8g        4096.0, 16g,      2048.0
@@ -24,6 +26,23 @@
 extern FLIGHT_BUFFERTYPE;
 
 static struct {
+  struct {                       //PERSISTENT MAGNETOMETER CALIBRATION (hard/soft-iron matrix, saved to disk)
+    //Fit via tests/magnetometer_calibration.py against raw_mag_log_v2.txt - calibrated
+    //magnitude mean=1.00, std=0.08 (~8% relative spread) across the sweep.
+    //IMPORTANT: the DPRINTF below logs magInput AFTER this matrix is applied - if you ever need to
+    //recollect calibration data again in the future, reset A/b to identity/zero first, or you'll be
+    //fitting an ellipsoid to already-calibrated (nearly spherical) data instead of raw data.
+    double A[3][3] = {
+      {  0.003722,  0.000013,  0.000415 },
+      {  0.000013,  0.004297, -0.000266 },
+      {  0.000415, -0.000266,  0.004518 }
+    };
+    double b[3] = {
+       173.166221,
+       165.081628,
+      -420.252058
+    };
+  } magCal;
   bool imuworking = false;
   bool magworking = false;
   unsigned int mpuMissCount = 0;
@@ -74,11 +93,25 @@ void peripheral_mpu9250Loop() {
     Wire.endTransmission( false );
     if( Wire.requestFrom( AK_I2C, AK_READ_SIZE, true ) == AK_READ_SIZE ) {
       Wire.readBytes( mpu.magBytes, AK_READ_SIZE );
-      ITRVEC3( q ) FLIGHT_BUFFER.magInput.f[q] = (signed short)( mpu.magBytes[ q * 2 ] << 8 | mpu.magBytes[ q * 2 + 1 ] );
-      FLIGHT_BUFFER.magUpdate = true;
-      mpu.magMissCount = 0;
-      DPRINTF( "[P] AK8963 Magnetometer: Value=[ %.3f, %.3f, %.3f ]\n", FLIGHT_BUFFER.magInput.x, 
-          FLIGHT_BUFFER.magInput.y, FLIGHT_BUFFER.magInput.z );
+      //discard stale (not DRDY) or overflowed (HOFL) samples rather than treat them as valid data
+      if( ( mpu.magBytes[0] & AK_ST1_DRDY ) && !( mpu.magBytes[7] & AK_ST2_HOFL ) ) {
+        signed short magAxisRaw[3];
+        // AK8963 data registers are little-endian: HXL is followed by HXH. Data starts at index 1 (index 0 is ST1).
+        ITRVEC3( q ) magAxisRaw[q] = (signed short)( mpu.magBytes[ q * 2 + 2 ] << 8 | mpu.magBytes[ q * 2 + 1 ] );
+        //the AK8963 magnetometer die has its own axis frame relative to the MPU9250 accel/gyro die
+        //(X/Y swapped, Z inverted); combined here with the same board-mounting correction applied to accel/gyro
+        FLIGHT_BUFFER.magInput.x = -magAxisRaw[1];
+        FLIGHT_BUFFER.magInput.y =  magAxisRaw[0];
+        FLIGHT_BUFFER.magInput.z =  magAxisRaw[2];
+        //apply calibration matrix: calibrated = A * ( raw - b )
+        double magRaw[3];
+        ITRVEC3( q ) magRaw[q] = FLIGHT_BUFFER.magInput.f[q] - mpu.magCal.b[q];
+        ITRVEC3( q ) FLIGHT_BUFFER.magInput.f[q] = mpu.magCal.A[q][0] * magRaw[0] + mpu.magCal.A[q][1] * magRaw[1] + mpu.magCal.A[q][2] * magRaw[2];
+        FLIGHT_BUFFER.magUpdate = true;
+        mpu.magMissCount = 0;
+        DPRINTF( "[P] AK8963 Magnetometer: Value=[ %.3f, %.3f, %.3f ]\n", FLIGHT_BUFFER.magInput.x,
+            FLIGHT_BUFFER.magInput.y, FLIGHT_BUFFER.magInput.z );
+      }
     } else if( ++mpu.magMissCount > 50 ) {
       mpu.magworking = false;
     }
@@ -86,7 +119,7 @@ void peripheral_mpu9250Loop() {
 }
 
 void peripheral_mpu9250Init() {
-  firmware_registerPeripheral( { "mpu9250", 0, sizeof( mpu ), &mpu, &peripheral_mpu9250Init, &peripheral_mpu9250Loop } );
+  firmware_registerPeripheral( { "mpu9250", sizeof( mpu.magCal ), sizeof( mpu ), &mpu, &peripheral_mpu9250Init, &peripheral_mpu9250Loop } );
   DPRINTF( "[P] Initializing MPU9250\n" );
   mpu.mpuMissCount = 0;
   //init wire
