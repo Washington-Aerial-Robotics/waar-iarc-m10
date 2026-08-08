@@ -6,9 +6,12 @@ class DroneComms {
   static const int comCmd = 0x40 ;
   static const int comFwd = 0x80;
 
-  static const int comSuccess = 0x3A;
-  static const int comFailure = 0x3B;
-  static const int comAcknowledged = 0x3C;
+  // Status codes (COM_SUCCESS / COM_FAILURE / COM_ACKNOWLEDGED / COM_INVALID
+  // in communication.h — these are shared replies to any COM_SET_* command).
+  static const int comSuccess = 0x3C;
+  static const int comFailure = 0x3D;
+  static const int comAcknowledged = 0x3E;
+  static const int comInvalid = 0x3F;
 
   static const int comPing = 0x40;
   static const int comPong = 0x00;
@@ -18,21 +21,28 @@ class DroneComms {
   static const int comSetMotorCmd = 0x40 | 16;
 
   static const int comRequestWifi = 0x61;
-  static const int comReplyWifi = 0x17;
+  static const int comReplyWifi = 0x21;
 
-  static const int comSetWifi = 0x58;
-  static const int comReplySetWifi = 0x18;
+  static const int comSetWifi = 0x62;
 
   static const int comKill = 0x40 | 35;
 
-  static const int comRequestPos = 0x63;
-  static const int comReplyPos = 0x23;
+  // Maps to COM_REQUEST_STATE / COM_REPLY_STATE — the "dronestate" reply,
+  // which carries position + flight status. There is no dedicated
+  // position-only message in the firmware.
+  static const int comRequestPos = 0x42;
+  static const int comReplyPos = 0x02;
 
-  static const int comRequestAtt = 0x65;
-  static const int comReplyAtt = 0x25;
+  // Maps to COM_REQUEST_STEST / COM_REPLY_STEST — the full state-estimate
+  // reply (position, velocity, attitude, angular rate). There is no
+  // separate attitude-only message; request this for attitude too.
+  static const int comRequestStateEst = 0x44;
+  static const int comReplyStateEst = 0x04;
 
-  static const int comRequestStateEst = 0x61;
-  static const int comReplyStateEst = 0x21;
+  // Maps to COM_REQUEST_INFO / COM_REPLY_INFO — the "droneinfo" reply,
+  // which carries device identification, firmware version, and battery.
+  static const int comRequestInfo = 0x43;
+  static const int comReplyInfo = 0x03;
 
   static const int nullMode = 0x00;
   static const int calibrationMode = 0x01;
@@ -195,5 +205,138 @@ class DronePacketBuilder {
       messageId: bytes[3],
       payload: Uint8List.sublistView(bytes, DroneComms.headerLen),
     );
+  }
+}
+
+/// A 3-float vector, matching the firmware's packed `coordinate` union
+/// (12 bytes: x,y,z as little-endian float32).
+class Coordinate3 {
+  const Coordinate3(this.x, this.y, this.z);
+
+  final double x;
+  final double y;
+  final double z;
+
+  static Coordinate3 fromBytes(ByteData bd, int offset) {
+    return Coordinate3(
+      bd.getFloat32(offset, Endian.little),
+      bd.getFloat32(offset + 4, Endian.little),
+      bd.getFloat32(offset + 8, Endian.little),
+    );
+  }
+
+  @override
+  String toString() {
+    return '(${x.toStringAsFixed(2)}, '
+        '${y.toStringAsFixed(2)}, '
+        '${z.toStringAsFixed(2)})';
+  }
+}
+
+/// Decoded telemetry from the drone, accumulated from whichever reply
+/// packets have arrived so far. Fields are null until a reply that reports
+/// them has been received at least once.
+class DroneTelemetry {
+  const DroneTelemetry({
+    this.position,
+    this.velocity,
+    this.attitude,
+    this.angularRate,
+    this.flightMode,
+    this.batteryPercent,
+    this.deviceId,
+    this.firmwareVersion,
+  });
+
+  final Coordinate3? position;
+  final Coordinate3? velocity;
+
+  // Firmware calls this block "q" but it is 3 floats, not a full
+  // quaternion: yaw lives in .z, with .x/.y as body-frame components
+  // (see communication.h's stateestimate comment).
+  final Coordinate3? attitude;
+  final Coordinate3? angularRate;
+
+  final int? flightMode;
+  final double? batteryPercent;
+  final int? deviceId;
+  final int? firmwareVersion;
+
+  /// Returns a copy with any non-null fields from [update] overlaid on top
+  /// of this telemetry, so partial replies (e.g. position-only) don't wipe
+  /// out fields reported by a different reply type.
+  DroneTelemetry mergedWith(DroneTelemetry update) {
+    return DroneTelemetry(
+      position: update.position ?? position,
+      velocity: update.velocity ?? velocity,
+      attitude: update.attitude ?? attitude,
+      angularRate: update.angularRate ?? angularRate,
+      flightMode: update.flightMode ?? flightMode,
+      batteryPercent: update.batteryPercent ?? batteryPercent,
+      deviceId: update.deviceId ?? deviceId,
+      firmwareVersion: update.firmwareVersion ?? firmwareVersion,
+    );
+  }
+
+  /// Decodes a COM_REPLY_STATE payload ("dronestate"): position + flight
+  /// status. Wire layout (packed, little-endian):
+  /// [x,y,z: float32][status: uint8] = 13 bytes.
+  static DroneTelemetry? fromStateReply(Uint8List payload) {
+    if (payload.length < 13) return null;
+
+    final bd = ByteData.sublistView(payload);
+    return DroneTelemetry(
+      position: Coordinate3.fromBytes(bd, 0),
+      flightMode: payload[12],
+    );
+  }
+
+  /// Decodes a COM_REPLY_STEST payload ("stateestimate"): position,
+  /// velocity, attitude, angular rate. Wire layout: four back-to-back
+  /// coordinate blocks (x, v, q, w), 12 bytes each = 48 bytes total.
+  static DroneTelemetry? fromStateEstimateReply(Uint8List payload) {
+    if (payload.length < 48) return null;
+
+    final bd = ByteData.sublistView(payload);
+    return DroneTelemetry(
+      position: Coordinate3.fromBytes(bd, 0),
+      velocity: Coordinate3.fromBytes(bd, 12),
+      attitude: Coordinate3.fromBytes(bd, 24),
+      angularRate: Coordinate3.fromBytes(bd, 36),
+    );
+  }
+
+  /// Decodes a COM_REPLY_INFO payload ("droneinfo"): identification,
+  /// firmware version, and battery. Wire layout:
+  /// [deviceID,flightMode,triggerLock,actuation: uint8 x4]
+  /// [version: uint32][battery: float32] = 12 bytes.
+  static DroneTelemetry? fromInfoReply(Uint8List payload) {
+    if (payload.length < 12) return null;
+
+    final bd = ByteData.sublistView(payload);
+    return DroneTelemetry(
+      deviceId: payload[0],
+      flightMode: payload[1],
+      firmwareVersion: bd.getUint32(4, Endian.little),
+      batteryPercent: bd.getFloat32(8, Endian.little),
+    );
+  }
+
+  @override
+  String toString() {
+    final parts = <String>[
+      if (position != null) 'pos=$position',
+      if (velocity != null) 'vel=$velocity',
+      if (attitude != null) 'att=$attitude',
+      if (angularRate != null) 'w=$angularRate',
+      if (flightMode != null) 'mode=$flightMode',
+      if (batteryPercent != null)
+        'batt=${batteryPercent!.toStringAsFixed(1)}%',
+      if (deviceId != null)
+        'id=0x${deviceId!.toRadixString(16).padLeft(2, '0')}',
+      if (firmwareVersion != null) 'fw=$firmwareVersion',
+    ];
+
+    return parts.isEmpty ? '(no telemetry yet)' : parts.join('  ');
   }
 }
