@@ -5,6 +5,7 @@
   "use_v4l2": true,
   "tag_family": "tag36h11",
   "tag_size_m": 0.0381,
+  "mine_tag_ids": [0, 12],
   "min_confidence": 0.1,
   "enable_visualization": false,
   "enable_csv_log": true,
@@ -37,8 +38,19 @@
   },
   "mine_shape": {
     "enable_shape_detection": true,
-    "min_shape_confidence": 0.35,
+    "min_shape_confidence": 0.55,
     "template_path": "SLAM/mine_shape/templates/pfm1_silhouette.png",
-    "pfm_physical_span_m": 0.12
+    "pfm_physical_span_m": 0.12,
+    "shape_max_match_distance": 0.18,
+    "shape_min_contour_area_px": 700,
+    "shape_max_contour_area_px": 200000,
+    "shape_min_span_px": 60,
+    "shape_max_span_px": 700,
+    "shape_min_aspect": 1.35,
+    "shape_max_aspect": 3.5,
+    "shape_min_solidity": 0.55,
+    "shape_min_extent": 0.42,
+    "shape_min_silhouette_iou": 0.48,
+    "shape_use_chromatic_proposal": true
   }
 }

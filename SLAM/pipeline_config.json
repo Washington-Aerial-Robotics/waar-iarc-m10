@@ -1,41 +1,112 @@
 {
+
   "camera_index": 0,
+
   "request_width": 1920,
+
   "request_height": 1080,
+
   "use_v4l2": true,
+
   "tag_family": "tag36h11",
+
   "tag_size_m": 0.0381,
+
+  "mine_tag_ids": [0, 12],
+
   "min_confidence": 0.1,
+
   "enable_visualization": false,
+
   "enable_csv_log": true,
+
   "use_rmse_confidence": true,
+
   "use_kalman_fusion": true,
+
   "field_x": 91.44,
+
   "field_y": 24.38,
+
   "map_resolution": 0.2,
+
   "pose_source": "stub",
+
   "esp32_host": "192.168.1.100",
+
   "esp32_port": 23,
+
   "esp32_drone_id": 65,
+
   "drone_camera": {
+
     "position_m": [0.0, 0.0, 0.0],
+
     "quaternion_xyzw": [0.0, 0.0, 0.0, 1.0]
+
   },
+
   "stub_drone": {
+
     "position_m": [0.0, 0.0, 1.5],
+
     "quaternion_xyzw": [0.0, 0.0, 0.0, 1.0]
+
   },
+
   "mine_shape": {
+
     "enable_shape_detection": true,
-    "min_shape_confidence": 0.35,
+
+    "min_shape_confidence": 0.55,
+
     "template_path": "SLAM/mine_shape/templates/pfm1_silhouette.png",
+
     "pfm_physical_span_m": 0.12,
-    "shape_max_match_distance": 0.45,
+
+    "shape_max_match_distance": 0.18,
+
     "shape_dedupe_radius_m": 0.5,
+
     "shape_fusion_radius_m": 0.5,
-    "shape_canny_low": 40,
-    "shape_canny_high": 120,
-    "shape_min_contour_area_px": 400,
-    "shape_max_contour_area_px": 80000
+
+    "shape_canny_low": 30,
+
+    "shape_canny_high": 100,
+
+    "shape_min_contour_area_px": 700,
+
+    "shape_max_contour_area_px": 200000,
+
+    "shape_morph_kernel": 5,
+
+    "shape_min_span_px": 60,
+
+    "shape_max_span_px": 700,
+
+    "shape_min_aspect": 1.35,
+
+    "shape_max_aspect": 3.5,
+
+    "shape_min_solidity": 0.55,
+
+    "shape_min_extent": 0.42,
+
+    "shape_min_silhouette_iou": 0.48,
+
+    "shape_use_chromatic_proposal": true,
+
+    "shape_blue_dom_margin": 25,
+
+    "shape_blue_hue_min": 95,
+
+    "shape_blue_hue_max": 135,
+
+    "shape_blue_min_sat": 40,
+
+    "shape_blue_min_value": 40
+
   }
+
 }
+

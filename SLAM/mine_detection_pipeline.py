@@ -81,6 +81,20 @@ class PerceptionPipeline:
                 max_contour_area_px=self.config.shape_max_contour_area_px,
                 canny_low=self.config.shape_canny_low,
                 canny_high=self.config.shape_canny_high,
+                morph_kernel=self.config.shape_morph_kernel,
+                min_span_px=self.config.shape_min_span_px,
+                max_span_px=self.config.shape_max_span_px,
+                min_aspect=self.config.shape_min_aspect,
+                max_aspect=self.config.shape_max_aspect,
+                min_solidity=self.config.shape_min_solidity,
+                min_extent=self.config.shape_min_extent,
+                min_silhouette_iou=self.config.shape_min_silhouette_iou,
+                use_chromatic_proposal=self.config.shape_use_chromatic_proposal,
+                blue_dom_margin=self.config.shape_blue_dom_margin,
+                blue_hue_min=self.config.shape_blue_hue_min,
+                blue_hue_max=self.config.shape_blue_hue_max,
+                blue_min_sat=self.config.shape_blue_min_sat,
+                blue_min_value=self.config.shape_blue_min_value,
                 ground_z_m=self.config.ground_z_m,
                 world_drone_transform_provider=self.pose_provider.world_drone_transform,
                 drone_camera_transform=self.drone_camera_transform,
@@ -123,7 +137,12 @@ class PerceptionPipeline:
 
         updated_mines = []
         world_positions = {}
+        mine_ids = set(self.config.mine_tag_ids)
         for detection in detections:
+            if detection.tag_id not in mine_ids:
+                # Decoy / non-mine arena object — decode OK, do not register as a mine.
+                continue
+
             world_position, world_rotation = tag_pose_to_world(
                 detection.translation_camera,
                 detection.rotation_camera,

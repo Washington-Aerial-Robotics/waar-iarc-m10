@@ -27,6 +27,8 @@ class PipelineConfig:
     force_mjpeg: bool = False
     tag_family: str = "tag36h11"
     tag_size_m: float = 0.0381
+    # IARC: PFM-1 mines use AprilTag IDs 0 and 12 only; other IDs are arena decoys/objects.
+    mine_tag_ids: list[int] = field(default_factory=lambda: [0, 12])
 
     min_confidence: float = 0.1
     enable_visualization: bool = False
@@ -80,16 +82,30 @@ class PipelineConfig:
 
     # Classical PFM-1 shape branch (parallel to AprilTags)
     enable_shape_detection: bool = True
-    min_shape_confidence: float = 0.35
+    min_shape_confidence: float = 0.55
     shape_template_path: Path | None = None
     pfm_physical_span_m: float = 0.12  # TODO: confirm wing span from IARC Resource Addendum
-    shape_max_match_distance: float = 0.45
+    shape_max_match_distance: float = 0.18
     shape_dedupe_radius_m: float = 0.5
     shape_fusion_radius_m: float = 0.5
-    shape_canny_low: int = 40
-    shape_canny_high: int = 120
-    shape_min_contour_area_px: float = 400.0
-    shape_max_contour_area_px: float = 80000.0
+    shape_canny_low: int = 30
+    shape_canny_high: int = 100
+    shape_min_contour_area_px: float = 700.0
+    shape_max_contour_area_px: float = 200000.0
+    shape_morph_kernel: int = 5
+    shape_min_span_px: float = 60.0
+    shape_max_span_px: float = 700.0
+    shape_min_aspect: float = 1.35
+    shape_max_aspect: float = 3.5
+    shape_min_solidity: float = 0.55
+    shape_min_extent: float = 0.42
+    shape_min_silhouette_iou: float = 0.48
+    shape_use_chromatic_proposal: bool = True
+    shape_blue_dom_margin: int = 25
+    shape_blue_hue_min: int = 95
+    shape_blue_hue_max: int = 135
+    shape_blue_min_sat: int = 40
+    shape_blue_min_value: int = 40
     ground_z_m: float = 0.0
 
     @classmethod
@@ -129,6 +145,9 @@ class PipelineConfig:
         ):
             if key in data:
                 setattr(cfg, key, data[key])
+
+        if "mine_tag_ids" in data:
+            cfg.mine_tag_ids = [int(x) for x in data["mine_tag_ids"]]
 
         if "pose_source" in data:
             cfg.pose_source = PoseSource(data["pose_source"])
@@ -190,6 +209,20 @@ class PipelineConfig:
                 "shape_canny_high",
                 "shape_min_contour_area_px",
                 "shape_max_contour_area_px",
+                "shape_morph_kernel",
+                "shape_min_span_px",
+                "shape_max_span_px",
+                "shape_min_aspect",
+                "shape_max_aspect",
+                "shape_min_solidity",
+                "shape_min_extent",
+                "shape_min_silhouette_iou",
+                "shape_use_chromatic_proposal",
+                "shape_blue_dom_margin",
+                "shape_blue_hue_min",
+                "shape_blue_hue_max",
+                "shape_blue_min_sat",
+                "shape_blue_min_value",
                 "ground_z_m",
             ):
                 if key in ms:

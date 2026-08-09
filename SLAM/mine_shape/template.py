@@ -36,8 +36,16 @@ def load_template_contour(
     if img is None:
         raise TemplateLoadError(f"Could not read template image: {path}")
 
-    edges = cv2.Canny(cv2.GaussianBlur(img, (5, 5), 0), canny_low, canny_high)
-    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    # White silhouette on black (see templates/README). Fixed threshold — do not
+    # invert by mean (that turns a large white body into a black hole whose
+    # RETR_EXTERNAL contour is the image border and breaks matchShapes).
+    _, binary = cv2.threshold(img, 127, 255, cv2.THRESH_BINARY)
+    if binary[0, 0] > 0 and binary[0, -1] > 0 and binary[-1, 0] > 0:
+        binary = 255 - binary
+    contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours or cv2.contourArea(max(contours, key=cv2.contourArea)) < 50:
+        edges = cv2.Canny(cv2.GaussianBlur(img, (5, 5), 0), canny_low, canny_high)
+        contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if not contours:
         raise TemplateLoadError(f"No contours in template: {path}")
 
