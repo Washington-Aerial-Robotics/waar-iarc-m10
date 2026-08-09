@@ -350,7 +350,12 @@ peripheral flight_reset() {
 void flight_step( const imu* sensor ) {
   switch( kafenv.info.flightMode & DEFAULT_MODES_MASK ) {
     case NULL_MODE : {
-      DPRINTF( "[F] Running Null Mode Step\n" );
+      //DEBUG logging throttled to ~1/s - see periph_freertos.cpp for why
+      static unsigned long lastNullModePrint = 0;
+      if( millis() - lastNullModePrint > 1000 ) {
+        lastNullModePrint = millis();
+        DPRINTF( "[F] Running Null Mode Step\n" );
+      }
       FPFILL0( i, kafenv.cmd.motors );
       kafenv.info.actuation = false;
       break;

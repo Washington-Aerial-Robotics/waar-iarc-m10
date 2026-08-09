@@ -40,7 +40,7 @@ int printf( const char* format, ... );
 #define STDBYTE unsigned char
 #define PERSIST 1
 #define DPRINTF( ... ) PRINTF( __VA_ARGS__ )
-#define FLTSYNC //while( kafenv.info.triggerLock != MAXBYTE ) { }
+#define FLTSYNC while( kafenv.info.triggerLock != MAXBYTE ) { }
 #define FPARLEN( F ) ( sizeof( F ) / sizeof( float ) )
 #define FPFILL0( N, F ) for( unsigned char N = 0; N < FPARLEN( F ); N++ ) F[N] = 0
 #define ITRVEC3( N ) for( unsigned char N = 0; N < 3; N++ )

@@ -35,8 +35,18 @@ void peripheral_bme280Loop() {
 }
 
 void peripheral_bme280Init() {
+  //KNOWN ISSUE: this consistently fails ("BME 280 Success Status: No") on real hardware even with the
+  //0x76/0x77 address fallback below, despite the chip working fine via a separate, standalone test
+  //sketch (BME280I2C library) on the same wiring/pins. Not yet isolated further - no functional impact
+  //currently since estimation.cpp's baro/altitude logic is a stub. Low priority, parked for now.
   firmware_registerPeripheral( { "bme280", 0, sizeof( bme ), &bme, &peripheral_bme280Init, &peripheral_bme280Loop } );
   DPRINTF( "[P] Initializing BME280\n" );
   bme.working = bme.mySensor.beginI2C();
+  if( !bme.working ) {
+    //library defaults to I2C address 0x76 (SDO tied low); some GY-BME280 boards default SDO high
+    //(0x77) when left unconnected, so retry there before giving up
+    bme.mySensor.setI2CAddress( 0x77 );
+    bme.working = bme.mySensor.beginI2C();
+  }
   DPRINTF( "[P] BME 280 Success Status: %s\n", bme.working ? "Yes" : "No" );
 }

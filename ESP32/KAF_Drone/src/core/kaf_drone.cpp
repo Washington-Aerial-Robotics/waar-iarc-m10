@@ -8,7 +8,12 @@ peripheral kaf_reset() {
   kafenv.info.flightMode = 0;
   kafenv.info.triggerLock = 0;
   kafenv.info.actuation = false;
-  kafenv.info.version = 0x20260527;
+  //bumped from 0x20260527: removing wifi from the persistent-EEPROM layout (see periph_wifi.cpp) shifts
+  //every persistent field registered after it. This invalidates any EEPROM blob written under the old
+  //layout - kafenv/mpu9250/commander/pidtuner - so it fails validation and gets reset to defaults
+  //instead of silently misapplying misaligned bytes (e.g. old wifi credential bytes read as commander
+  //trajectory data, or old commander bytes read as PID gains).
+  kafenv.info.version = 0x20260808;
   kafenv.info.battery = 100.0F;
   FPFILL0( i, kafenv.state.x.f );
   FPFILL0( i, kafenv.state.v.f );
