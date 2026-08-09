@@ -1,0 +1,880 @@
+[
+  {
+    "name": "A10_no_tag_2m.jpg",
+    "part": "A",
+    "true_distance_m": 2.0,
+    "has_tag_label": false,
+    "stock_shape": {
+      "n": 1,
+      "top_conf": 0.79932323281507,
+      "est_depth_m": 1.826543217009443,
+      "span_px": 66.0,
+      "match_distance": 0.09030454523321849,
+      "extras": {}
+    },
+    "diag_shape": {
+      "n": 1,
+      "top_conf": 0.47815934794262327,
+      "est_depth_m": 0.09418113462704941,
+      "span_px": 1280.0,
+      "match_distance": 0.23482829342581954,
+      "extras": {
+        "area_px": 828557.0
+      }
+    },
+    "blue_shape": {
+      "n": 2,
+      "top_conf": 0.43330322484464767,
+      "est_depth_m": 3.013796308065581,
+      "span_px": 40.0,
+      "match_distance": 0.25501354881990856,
+      "extras": {
+        "area_px": 772.0
+      }
+    },
+    "tag_n": 0,
+    "tag_ids": [],
+    "tag_top_conf": null,
+    "tag_est_depth_m": null,
+    "aruco_n": 0,
+    "notes": ""
+  },
+  {
+    "name": "A1_with_tag_30cm.jpg",
+    "part": "A",
+    "true_distance_m": 0.3,
+    "has_tag_label": true,
+    "stock_shape": {
+      "n": 1,
+      "top_conf": 0.7586349493994512,
+      "est_depth_m": 0.24255905899924193,
+      "span_px": 497.0,
+      "match_distance": 0.10861427277024696,
+      "extras": {}
+    },
+    "diag_shape": {
+      "n": 1,
+      "top_conf": 0.601264459809299,
+      "est_depth_m": 0.09418113462704941,
+      "span_px": 1280.0,
+      "match_distance": 0.17943099308581545,
+      "extras": {
+        "area_px": 896827.5
+      }
+    },
+    "blue_shape": {
+      "n": 3,
+      "top_conf": 0.631164931119186,
+      "est_depth_m": 1.105980296537828,
+      "span_px": 109.0,
+      "match_distance": 0.16597578099636626,
+      "extras": {
+        "area_px": 3336.5
+      }
+    },
+    "tag_n": 0,
+    "tag_ids": [],
+    "tag_top_conf": null,
+    "tag_est_depth_m": null,
+    "aruco_n": 0,
+    "notes": ""
+  },
+  {
+    "name": "A2_with_tag_50cm.jpg",
+    "part": "A",
+    "true_distance_m": 0.5,
+    "has_tag_label": true,
+    "stock_shape": {
+      "n": 1,
+      "top_conf": 0.7227044374008769,
+      "est_depth_m": 0.3814932035526052,
+      "span_px": 316.0,
+      "match_distance": 0.12478300316960539,
+      "extras": {}
+    },
+    "diag_shape": {
+      "n": 1,
+      "top_conf": 0.5568711618948929,
+      "est_depth_m": 0.09418113462704941,
+      "span_px": 1280.0,
+      "match_distance": 0.1994079771472982,
+      "extras": {
+        "area_px": 909733.5
+      }
+    },
+    "blue_shape": {
+      "n": 3,
+      "top_conf": 0.422114632285833,
+      "est_depth_m": 2.411037046452465,
+      "span_px": 50.0,
+      "match_distance": 0.26004841547137514,
+      "extras": {
+        "area_px": 944.5
+      }
+    },
+    "tag_n": 0,
+    "tag_ids": [],
+    "tag_top_conf": null,
+    "tag_est_depth_m": null,
+    "aruco_n": 0,
+    "notes": ""
+  },
+  {
+    "name": "A3_with_tag_1m.jpg",
+    "part": "A",
+    "true_distance_m": 1.0,
+    "has_tag_label": true,
+    "stock_shape": {
+      "n": 1,
+      "top_conf": 0.8452665645101642,
+      "est_depth_m": 0.9492271836427028,
+      "span_px": 127.0,
+      "match_distance": 0.06963004597042607,
+      "extras": {}
+    },
+    "diag_shape": {
+      "n": 1,
+      "top_conf": 0.6233909051854736,
+      "est_depth_m": 0.09418113462704941,
+      "span_px": 1280.0,
+      "match_distance": 0.16947409266653687,
+      "extras": {
+        "area_px": 820085.5
+      }
+    },
+    "blue_shape": {
+      "n": 3,
+      "top_conf": 0.747640453821027,
+      "est_depth_m": 1.5068981540327906,
+      "span_px": 80.0,
+      "match_distance": 0.11356179578053788,
+      "extras": {
+        "area_px": 1843.5
+      }
+    },
+    "tag_n": 0,
+    "tag_ids": [],
+    "tag_top_conf": null,
+    "tag_est_depth_m": null,
+    "aruco_n": 0,
+    "notes": ""
+  },
+  {
+    "name": "A4_with_tag_1.5m.jpg",
+    "part": "A",
+    "true_distance_m": 1.5,
+    "has_tag_label": true,
+    "stock_shape": {
+      "n": 2,
+      "top_conf": 0.8030869054163069,
+      "est_depth_m": 0.5108129335704374,
+      "span_px": 236.0,
+      "match_distance": 0.08861089256266191,
+      "extras": {}
+    },
+    "diag_shape": {
+      "n": 1,
+      "top_conf": 0.7835420408847403,
+      "est_depth_m": 0.09418113462704941,
+      "span_px": 1280.0,
+      "match_distance": 0.09740608160186684,
+      "extras": {
+        "area_px": 759375.5
+      }
+    },
+    "blue_shape": {
+      "n": 2,
+      "top_conf": 0.5670059020987124,
+      "est_depth_m": 1.385653474972681,
+      "span_px": 87.0,
+      "match_distance": 0.19484734405557946,
+      "extras": {
+        "area_px": 3134.0
+      }
+    },
+    "tag_n": 0,
+    "tag_ids": [],
+    "tag_top_conf": null,
+    "tag_est_depth_m": null,
+    "aruco_n": 0,
+    "notes": ""
+  },
+  {
+    "name": "A5_with_tag_2m.jpg",
+    "part": "A",
+    "true_distance_m": 2.0,
+    "has_tag_label": true,
+    "stock_shape": {
+      "n": 3,
+      "top_conf": 0.7871088657728241,
+      "est_depth_m": 1.4017657246816657,
+      "span_px": 86.0,
+      "match_distance": 0.09580101040222916,
+      "extras": {}
+    },
+    "diag_shape": {
+      "n": 3,
+      "top_conf": 0.6021695726568221,
+      "est_depth_m": 0.5909404525618787,
+      "span_px": 204.0,
+      "match_distance": 0.17902369230443008,
+      "extras": {
+        "area_px": 14797.5
+      }
+    },
+    "blue_shape": {
+      "n": 3,
+      "top_conf": 0.8585566803590083,
+      "est_depth_m": 1.3699074127570823,
+      "span_px": 88.0,
+      "match_distance": 0.06364949383844626,
+      "extras": {
+        "area_px": 2111.0
+      }
+    },
+    "tag_n": 0,
+    "tag_ids": [],
+    "tag_top_conf": null,
+    "tag_est_depth_m": null,
+    "aruco_n": 0,
+    "notes": ""
+  },
+  {
+    "name": "A6_no_tag_30cm.jpg",
+    "part": "A",
+    "true_distance_m": 0.3,
+    "has_tag_label": false,
+    "stock_shape": {
+      "n": 1,
+      "top_conf": 0.9036096521453655,
+      "est_depth_m": 0.227456325137025,
+      "span_px": 530.0,
+      "match_distance": 0.043375656534585555,
+      "extras": {}
+    },
+    "diag_shape": {
+      "n": 1,
+      "top_conf": 0.5630976873566764,
+      "est_depth_m": 0.09418113462704941,
+      "span_px": 1280.0,
+      "match_distance": 0.1966060406894956,
+      "extras": {
+        "area_px": 903894.0
+      }
+    },
+    "blue_shape": {
+      "n": 2,
+      "top_conf": 0.6633191974285259,
+      "est_depth_m": 0.8313920849836086,
+      "span_px": 145.0,
+      "match_distance": 0.15150636115716337,
+      "extras": {
+        "area_px": 7882.5
+      }
+    },
+    "tag_n": 0,
+    "tag_ids": [],
+    "tag_top_conf": null,
+    "tag_est_depth_m": null,
+    "aruco_n": 0,
+    "notes": ""
+  },
+  {
+    "name": "A7_no_tag_50cm.jpg",
+    "part": "A",
+    "true_distance_m": 0.5,
+    "has_tag_label": false,
+    "stock_shape": {
+      "n": 3,
+      "top_conf": 0.9346289988918317,
+      "est_depth_m": 0.4672552415605552,
+      "span_px": 258.0,
+      "match_distance": 0.02941695049867571,
+      "extras": {}
+    },
+    "diag_shape": {
+      "n": 1,
+      "top_conf": 0.5377258836234388,
+      "est_depth_m": 0.09418113462704941,
+      "span_px": 1280.0,
+      "match_distance": 0.20802335236945257,
+      "extras": {
+        "area_px": 882233.0
+      }
+    },
+    "blue_shape": {
+      "n": 5,
+      "top_conf": 0.8249281479820179,
+      "est_depth_m": 0.35352449361473093,
+      "span_px": 341.0,
+      "match_distance": 0.07878233340809199,
+      "extras": {
+        "area_px": 30215.5
+      }
+    },
+    "tag_n": 0,
+    "tag_ids": [],
+    "tag_top_conf": null,
+    "tag_est_depth_m": null,
+    "aruco_n": 0,
+    "notes": ""
+  },
+  {
+    "name": "A8_no_tag_1m.jpg",
+    "part": "A",
+    "true_distance_m": 1.0,
+    "has_tag_label": false,
+    "stock_shape": {
+      "n": 1,
+      "top_conf": 0.9051219435745818,
+      "est_depth_m": 0.8735641472653859,
+      "span_px": 138.0,
+      "match_distance": 0.042695125391438216,
+      "extras": {}
+    },
+    "diag_shape": {
+      "n": 1,
+      "top_conf": 0.5416965568073913,
+      "est_depth_m": 0.09418113462704941,
+      "span_px": 1280.0,
+      "match_distance": 0.2062365494366739,
+      "extras": {
+        "area_px": 910687.5
+      }
+    },
+    "blue_shape": {
+      "n": 12,
+      "top_conf": 0.8135246627550166,
+      "est_depth_m": 3.013796308065581,
+      "span_px": 40.0,
+      "match_distance": 0.08391390176024258,
+      "extras": {
+        "area_px": 548.0
+      }
+    },
+    "tag_n": 0,
+    "tag_ids": [],
+    "tag_top_conf": null,
+    "tag_est_depth_m": null,
+    "aruco_n": 0,
+    "notes": ""
+  },
+  {
+    "name": "A9_no_tag_1.5m.jpg",
+    "part": "A",
+    "true_distance_m": 1.5,
+    "has_tag_label": false,
+    "stock_shape": {
+      "n": 2,
+      "top_conf": 0.8678489854211049,
+      "est_depth_m": 1.3699074127570823,
+      "span_px": 88.0,
+      "match_distance": 0.0594679565605028,
+      "extras": {}
+    },
+    "diag_shape": {
+      "n": 0,
+      "top_conf": null,
+      "est_depth_m": null,
+      "span_px": null,
+      "match_distance": null,
+      "extras": {}
+    },
+    "blue_shape": {
+      "n": 5,
+      "top_conf": 0.6804580166364715,
+      "est_depth_m": 2.7398148255141646,
+      "span_px": 44.0,
+      "match_distance": 0.14379389251358785,
+      "extras": {
+        "area_px": 624.0
+      }
+    },
+    "tag_n": 0,
+    "tag_ids": [],
+    "tag_top_conf": null,
+    "tag_est_depth_m": null,
+    "aruco_n": 0,
+    "notes": ""
+  },
+  {
+    "name": "B1_camera_at_45deg_angle.jpg",
+    "part": "B",
+    "true_distance_m": null,
+    "has_tag_label": null,
+    "stock_shape": {
+      "n": 1,
+      "top_conf": 0.8700397090323198,
+      "est_depth_m": 0.25704019684994295,
+      "span_px": 469.0,
+      "match_distance": 0.058482130935456095,
+      "extras": {}
+    },
+    "diag_shape": {
+      "n": 1,
+      "top_conf": 0.6006895834810078,
+      "est_depth_m": 0.09418113462704941,
+      "span_px": 1280.0,
+      "match_distance": 0.17968968743354652,
+      "extras": {
+        "area_px": 865006.5
+      }
+    },
+    "blue_shape": {
+      "n": 3,
+      "top_conf": 0.7362362140030316,
+      "est_depth_m": 0.24958975636153882,
+      "span_px": 483.0,
+      "match_distance": 0.1186937036986358,
+      "extras": {
+        "area_px": 83722.0
+      }
+    },
+    "tag_n": 0,
+    "tag_ids": [],
+    "tag_top_conf": null,
+    "tag_est_depth_m": null,
+    "aruco_n": 0,
+    "notes": ""
+  },
+  {
+    "name": "B2_camera_at_low_angle.jpg",
+    "part": "B",
+    "true_distance_m": null,
+    "has_tag_label": null,
+    "stock_shape": {
+      "n": 1,
+      "top_conf": 0.9136170140616853,
+      "est_depth_m": 0.75818775045675,
+      "span_px": 159.0,
+      "match_distance": 0.038872343672241655,
+      "extras": {}
+    },
+    "diag_shape": {
+      "n": 1,
+      "top_conf": 0.5263719383227108,
+      "est_depth_m": 4.018395077420775,
+      "span_px": 30.0,
+      "match_distance": 0.21313262775478015,
+      "extras": {
+        "area_px": 427.0
+      }
+    },
+    "blue_shape": {
+      "n": 2,
+      "top_conf": 0.7917247086698881,
+      "est_depth_m": 3.172417166384822,
+      "span_px": 38.0,
+      "match_distance": 0.09372388109855037,
+      "extras": {
+        "area_px": 715.5
+      }
+    },
+    "tag_n": 0,
+    "tag_ids": [],
+    "tag_top_conf": null,
+    "tag_est_depth_m": null,
+    "aruco_n": 0,
+    "notes": ""
+  },
+  {
+    "name": "B3_camera_straight_down_mine_rotated.jpg",
+    "part": "B",
+    "true_distance_m": null,
+    "has_tag_label": null,
+    "stock_shape": {
+      "n": 2,
+      "top_conf": 0.8578135576734325,
+      "est_depth_m": 1.3103462208980787,
+      "span_px": 92.0,
+      "match_distance": 0.06398389904695537,
+      "extras": {}
+    },
+    "diag_shape": {
+      "n": 1,
+      "top_conf": 0.613782157422038,
+      "est_depth_m": 0.09418113462704941,
+      "span_px": 1280.0,
+      "match_distance": 0.1737980291600829,
+      "extras": {
+        "area_px": 873095.5
+      }
+    },
+    "blue_shape": {
+      "n": 5,
+      "top_conf": 0.8195414370302836,
+      "est_depth_m": 1.56560847172238,
+      "span_px": 77.0,
+      "match_distance": 0.08120635333637236,
+      "extras": {
+        "area_px": 2462.5
+      }
+    },
+    "tag_n": 0,
+    "tag_ids": [],
+    "tag_top_conf": null,
+    "tag_est_depth_m": null,
+    "aruco_n": 0,
+    "notes": ""
+  },
+  {
+    "name": "B4_mine_rotated_45deg_angle.jpg",
+    "part": "B",
+    "true_distance_m": null,
+    "has_tag_label": null,
+    "stock_shape": {
+      "n": 2,
+      "top_conf": 0.9067720135716189,
+      "est_depth_m": 0.2816632063612693,
+      "span_px": 428.0,
+      "match_distance": 0.041952593892771534,
+      "extras": {}
+    },
+    "diag_shape": {
+      "n": 1,
+      "top_conf": 0.45815380860630484,
+      "est_depth_m": 0.09418113462704941,
+      "span_px": 1280.0,
+      "match_distance": 0.24383078612716283,
+      "extras": {
+        "area_px": 824230.5
+      }
+    },
+    "blue_shape": {
+      "n": 3,
+      "top_conf": 0.8350954170983362,
+      "est_depth_m": 0.8371656411293281,
+      "span_px": 144.0,
+      "match_distance": 0.0742070623057487,
+      "extras": {
+        "area_px": 7849.0
+      }
+    },
+    "tag_n": 0,
+    "tag_ids": [],
+    "tag_top_conf": null,
+    "tag_est_depth_m": null,
+    "aruco_n": 0,
+    "notes": ""
+  },
+  {
+    "name": "C1_1_mine_ground_random_cluster.jpg",
+    "part": "C",
+    "true_distance_m": null,
+    "has_tag_label": null,
+    "stock_shape": {
+      "n": 5,
+      "top_conf": 0.9169750888960203,
+      "est_depth_m": 1.0216258671408749,
+      "span_px": 118.0,
+      "match_distance": 0.03736120999679088,
+      "extras": {}
+    },
+    "diag_shape": {
+      "n": 1,
+      "top_conf": 0.38385284423088384,
+      "est_depth_m": 0.09418113462704941,
+      "span_px": 1280.0,
+      "match_distance": 0.2772662200961023,
+      "extras": {
+        "area_px": 839859.0
+      }
+    },
+    "blue_shape": {
+      "n": 6,
+      "top_conf": 0.8231012878271284,
+      "est_depth_m": 0.9881299370706823,
+      "span_px": 122.0,
+      "match_distance": 0.07960442047779223,
+      "extras": {
+        "area_px": 6753.0
+      }
+    },
+    "tag_n": 0,
+    "tag_ids": [],
+    "tag_top_conf": null,
+    "tag_est_depth_m": null,
+    "aruco_n": 0,
+    "notes": ""
+  },
+  {
+    "name": "C1_2_mine_ground_random_cluster.jpg",
+    "part": "C",
+    "true_distance_m": null,
+    "has_tag_label": null,
+    "stock_shape": {
+      "n": 4,
+      "top_conf": 0.8729060146939538,
+      "est_depth_m": 0.97219235744051,
+      "span_px": 124.0,
+      "match_distance": 0.05719229338772078,
+      "extras": {}
+    },
+    "diag_shape": {
+      "n": 1,
+      "top_conf": 0.41062167877469713,
+      "est_depth_m": 0.09418113462704941,
+      "span_px": 1280.0,
+      "match_distance": 0.2652202445513863,
+      "extras": {
+        "area_px": 750766.5
+      }
+    },
+    "blue_shape": {
+      "n": 6,
+      "top_conf": 0.7979412408689754,
+      "est_depth_m": 1.242802601264157,
+      "span_px": 97.0,
+      "match_distance": 0.09092644160896104,
+      "extras": {
+        "area_px": 4455.0
+      }
+    },
+    "tag_n": 0,
+    "tag_ids": [],
+    "tag_top_conf": null,
+    "tag_est_depth_m": null,
+    "aruco_n": 0,
+    "notes": ""
+  },
+  {
+    "name": "C1_3_mine_ground_random_cluster.jpg",
+    "part": "C",
+    "true_distance_m": null,
+    "has_tag_label": null,
+    "stock_shape": {
+      "n": 3,
+      "top_conf": 0.9266452312642892,
+      "est_depth_m": 0.5334152757638196,
+      "span_px": 226.0,
+      "match_distance": 0.033009645931069836,
+      "extras": {}
+    },
+    "diag_shape": {
+      "n": 1,
+      "top_conf": 0.6080885225096768,
+      "est_depth_m": 0.09418113462704941,
+      "span_px": 1280.0,
+      "match_distance": 0.17636016487064543,
+      "extras": {
+        "area_px": 885617.0
+      }
+    },
+    "blue_shape": {
+      "n": 3,
+      "top_conf": 0.8514633453229652,
+      "est_depth_m": 1.3545151946362162,
+      "span_px": 89.0,
+      "match_distance": 0.06684149460466565,
+      "extras": {
+        "area_px": 2503.5
+      }
+    },
+    "tag_n": 0,
+    "tag_ids": [],
+    "tag_top_conf": null,
+    "tag_est_depth_m": null,
+    "aruco_n": 0,
+    "notes": ""
+  },
+  {
+    "name": "C2_1_fake_paper_code_near_mine.jpg",
+    "part": "C",
+    "true_distance_m": null,
+    "has_tag_label": null,
+    "stock_shape": {
+      "n": 2,
+      "top_conf": 0.8820998772243301,
+      "est_depth_m": 0.552990148268914,
+      "span_px": 218.0,
+      "match_distance": 0.053055055249051436,
+      "extras": {}
+    },
+    "diag_shape": {
+      "n": 1,
+      "top_conf": 0.5469306669762662,
+      "est_depth_m": 0.09418113462704941,
+      "span_px": 1280.0,
+      "match_distance": 0.2038811998606802,
+      "extras": {
+        "area_px": 892755.5
+      }
+    },
+    "blue_shape": {
+      "n": 3,
+      "top_conf": 0.6367680589328961,
+      "est_depth_m": 1.826543217009443,
+      "span_px": 66.0,
+      "match_distance": 0.16345437348019676,
+      "extras": {
+        "area_px": 2157.5
+      }
+    },
+    "tag_n": 0,
+    "tag_ids": [],
+    "tag_top_conf": null,
+    "tag_est_depth_m": null,
+    "aruco_n": 0,
+    "notes": ""
+  },
+  {
+    "name": "C2_2_fake_paper_code_near_mine.jpg",
+    "part": "C",
+    "true_distance_m": null,
+    "has_tag_label": null,
+    "stock_shape": {
+      "n": 2,
+      "top_conf": 0.9258295906629598,
+      "est_depth_m": 0.5479629651028329,
+      "span_px": 220.0,
+      "match_distance": 0.033376684201668116,
+      "extras": {}
+    },
+    "diag_shape": {
+      "n": 1,
+      "top_conf": 0.5620759354924899,
+      "est_depth_m": 0.09418113462704941,
+      "span_px": 1280.0,
+      "match_distance": 0.19706582902837955,
+      "extras": {
+        "area_px": 895442.5
+      }
+    },
+    "blue_shape": {
+      "n": 3,
+      "top_conf": 0.726090385943052,
+      "est_depth_m": 1.772821357685636,
+      "span_px": 68.0,
+      "match_distance": 0.12325932632562661,
+      "extras": {
+        "area_px": 2220.5
+      }
+    },
+    "tag_n": 0,
+    "tag_ids": [],
+    "tag_top_conf": null,
+    "tag_est_depth_m": null,
+    "aruco_n": 0,
+    "notes": ""
+  },
+  {
+    "name": "C2_3_fake_paper_code_near_mine.jpg",
+    "part": "C",
+    "true_distance_m": null,
+    "has_tag_label": null,
+    "stock_shape": {
+      "n": 1,
+      "top_conf": 0.8125420308268866,
+      "est_depth_m": 0.5454834946725033,
+      "span_px": 221.0,
+      "match_distance": 0.08435608612790102,
+      "extras": {}
+    },
+    "diag_shape": {
+      "n": 1,
+      "top_conf": 0.5547723836179312,
+      "est_depth_m": 0.09418113462704941,
+      "span_px": 1280.0,
+      "match_distance": 0.20035242737193093,
+      "extras": {
+        "area_px": 893209.0
+      }
+    },
+    "blue_shape": {
+      "n": 2,
+      "top_conf": 0.736633886420266,
+      "est_depth_m": 1.7471282945307718,
+      "span_px": 69.0,
+      "match_distance": 0.11851475111088036,
+      "extras": {
+        "area_px": 2324.5
+      }
+    },
+    "tag_n": 0,
+    "tag_ids": [],
+    "tag_top_conf": null,
+    "tag_est_depth_m": null,
+    "aruco_n": 1,
+    "notes": ""
+  },
+  {
+    "name": "C3_1_fake_paper_code_itself.jpg",
+    "part": "C",
+    "true_distance_m": null,
+    "has_tag_label": null,
+    "stock_shape": {
+      "n": 0,
+      "top_conf": null,
+      "est_depth_m": null,
+      "span_px": null,
+      "match_distance": null,
+      "extras": {}
+    },
+    "diag_shape": {
+      "n": 1,
+      "top_conf": 0.5703803803482184,
+      "est_depth_m": 0.09418113462704941,
+      "span_px": 1280.0,
+      "match_distance": 0.19332882884330171,
+      "extras": {
+        "area_px": 900060.5
+      }
+    },
+    "blue_shape": {
+      "n": 2,
+      "top_conf": 0.5660095942681873,
+      "est_depth_m": 3.653086434018886,
+      "span_px": 33.0,
+      "match_distance": 0.1952956825793157,
+      "extras": {
+        "area_px": 508.0
+      }
+    },
+    "tag_n": 0,
+    "tag_ids": [],
+    "tag_top_conf": null,
+    "tag_est_depth_m": null,
+    "aruco_n": 0,
+    "notes": "stock_gated_out"
+  },
+  {
+    "name": "C3_2_fake_paper_code_itself.jpg",
+    "part": "C",
+    "true_distance_m": null,
+    "has_tag_label": null,
+    "stock_shape": {
+      "n": 0,
+      "top_conf": null,
+      "est_depth_m": null,
+      "span_px": null,
+      "match_distance": null,
+      "extras": {}
+    },
+    "diag_shape": {
+      "n": 1,
+      "top_conf": 0.5685301624158768,
+      "est_depth_m": 0.09418113462704941,
+      "span_px": 1280.0,
+      "match_distance": 0.19416142691285543,
+      "extras": {
+        "area_px": 893799.5
+      }
+    },
+    "blue_shape": {
+      "n": 2,
+      "top_conf": 0.7731217178273021,
+      "est_depth_m": 3.2581581708817096,
+      "span_px": 37.0,
+      "match_distance": 0.10209522697771406,
+      "extras": {
+        "area_px": 518.0
+      }
+    },
+    "tag_n": 0,
+    "tag_ids": [],
+    "tag_top_conf": null,
+    "tag_est_depth_m": null,
+    "aruco_n": 0,
+    "notes": "stock_gated_out"
+  }
+]
