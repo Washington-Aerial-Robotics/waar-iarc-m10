@@ -29,6 +29,7 @@ class TaskAnnounceData:
     target_y:      float
     priority:      float
     claim_window_s: float
+    mine_id:       str = ""
     announced_at:  float = field(default_factory=time.monotonic)
 
 
@@ -88,16 +89,26 @@ class AuctionManager:
         self._auctions: Dict[str, AuctionEntry] = {}
         self._won: List[TaskAnnounceData] = []       # tasks we won, waiting to be dispatched
         self._abandoned: List[TaskAnnounceData] = [] # tasks with no bidders
+        self._early_claims: Dict[str, List[ClaimData]] = {}
 
-    def on_announce(self, data: TaskAnnounceData):
+    def on_announce(self, data: TaskAnnounceData) -> bool:
+        """Register a new auction and report whether it was new."""
         if data.task_id in self._auctions:
-            return   # duplicate announce, ignore
-        self._auctions[data.task_id] = AuctionEntry(data)
+            return False
+        entry = AuctionEntry(data)
+        self._auctions[data.task_id] = entry
+        for claim in self._early_claims.pop(data.task_id, []):
+            entry.add_claim(claim)
+        return True
 
     def on_claim(self, data: ClaimData):
         entry = self._auctions.get(data.task_id)
         if entry and not entry.done:
             entry.add_claim(data)
+        elif entry is None and len(self._early_claims) < 256:
+            claims = self._early_claims.setdefault(data.task_id, [])
+            if len(claims) < 16:
+                claims.append(data)
 
     def tick(self) -> List[str]:
         """
@@ -130,6 +141,11 @@ class AuctionManager:
         """Return True if task_id is already registered (open or closed)."""
         return task_id in self._auctions
 
+    def get_announce(self, task_id: str) -> Optional[TaskAnnounceData]:
+        """Return the task description for a known auction."""
+        entry = self._auctions.get(task_id)
+        return entry.announce if entry is not None else None
+
     def compute_cost(self, announce: TaskAnnounceData,
                      my_x: float, my_y: float,
                      my_state: str, busy: bool) -> Optional[float]:
@@ -142,8 +158,8 @@ class AuctionManager:
           + 1000 if busy (already executing a task)
           × (1 / priority)  — higher priority reduces cost
         """
-        # Don't bid if we're in FINISH state
-        if my_state in ("FINISH", "BOOT"):
+        # Fail closed until mission_logic_node publishes an executable state.
+        if my_state not in ("SURVEY", "VERIFY_TAG", "PATH_VERIFY", "CONVERGE"):
             return None
 
         # Don't bid if we're already executing a high-priority task

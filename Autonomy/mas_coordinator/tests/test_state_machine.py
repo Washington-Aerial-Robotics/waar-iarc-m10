@@ -25,6 +25,7 @@ def make_ctx(**kwargs) -> MissionContext:
         time_remaining=600.0,
         mine_count=0,
         confirmed_count=0,
+        resolved_count=0,
         all_drones_ready=False,
         path_verified=False,
         all_converged=False,
@@ -69,6 +70,12 @@ class TestSurveyTransitions:
         self.sm.tick(make_ctx(mine_count=0, time_remaining=300.0))
         assert self.sm.state == "SURVEY"
 
+    def test_survey_stays_when_all_known_mines_are_resolved(self):
+        self.sm.tick(make_ctx(
+            mine_count=3, confirmed_count=2, resolved_count=3,
+            time_remaining=300.0))
+        assert self.sm.state == "SURVEY"
+
     def test_time_override_beats_mine_condition(self):
         # Even with mines, if time is low go to PATH_VERIFY not VERIFY_TAG
         self.sm.tick(make_ctx(mine_count=5, time_remaining=T_PATH_VERIFY - 1))
@@ -84,7 +91,9 @@ class TestVerifyTagTransitions:
         self.sm._go("VERIFY_TAG")
 
     def test_verify_to_survey_when_all_confirmed(self):
-        self.sm.tick(make_ctx(mine_count=3, confirmed_count=3, time_remaining=300.0))
+        self.sm.tick(make_ctx(
+            mine_count=3, confirmed_count=2, resolved_count=3,
+            time_remaining=300.0))
         assert self.sm.state == "SURVEY"
 
     def test_verify_to_path_verify_on_time(self):
@@ -93,7 +102,9 @@ class TestVerifyTagTransitions:
         assert self.sm.state == "PATH_VERIFY"
 
     def test_verify_stays_with_unresolved_mines(self):
-        self.sm.tick(make_ctx(mine_count=3, confirmed_count=1, time_remaining=300.0))
+        self.sm.tick(make_ctx(
+            mine_count=3, confirmed_count=1, resolved_count=1,
+            time_remaining=300.0))
         assert self.sm.state == "VERIFY_TAG"
 
 
@@ -130,9 +141,9 @@ class TestConvergeTransitions:
         self.sm.tick(make_ctx(time_remaining=T_FINISH - 1))
         assert self.sm.state == "FINISH"
 
-    def test_converge_to_finish_when_all_converged(self):
+    def test_does_not_finish_early_when_all_peers_enter_converge(self):
         self.sm.tick(make_ctx(all_converged=True, time_remaining=300.0))
-        assert self.sm.state == "FINISH"
+        assert self.sm.state == "CONVERGE"
 
     def test_converge_stays_without_trigger(self):
         self.sm.tick(make_ctx(all_converged=False, time_remaining=300.0))

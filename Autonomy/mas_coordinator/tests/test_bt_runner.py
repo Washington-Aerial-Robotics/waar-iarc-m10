@@ -115,11 +115,16 @@ class TestPrioritySelector:
 
 class TestCollisionGuardNode:
 
+    def test_does_not_compare_zero_pose_before_localization(self):
+        node = make_node(team_poses={"d2": (0.1, 0.1)})
+        node.own_pose_last_seen = None
+        assert CollisionGuardNode().tick(node) == BTStatus.FAILURE
+
     def test_success_when_neighbor_within_r_collision(self):
         # Neighbor 0.5 m away; R_COLLISION = 0.8 m
         node = make_node(own_x=5.0, own_y=5.0, team_poses={"d2": (5.5, 5.0)})
         assert CollisionGuardNode().tick(node) == BTStatus.SUCCESS
-        assert '"HOLD"' in published_cmd(node)
+        assert '"HOLD_POSITION"' in published_cmd(node)
 
     def test_failure_when_no_neighbor_within_r_collision(self):
         # Neighbor ~7 m away
@@ -151,7 +156,8 @@ class TestGeofenceGuardNode:
     def test_success_when_x_negative(self):
         node = make_node(own_x=-0.1, own_y=5.0)
         assert GeofenceGuardNode().tick(node) == BTStatus.SUCCESS
-        assert '"RETURN_TO_BOUNDS"' in published_cmd(node)
+        assert '"HOLD_POSITION"' in published_cmd(node)
+        assert '"outside_geofence"' in published_cmd(node)
 
     def test_success_when_x_exceeds_arena_w(self):
         node = make_node(own_x=30.1, own_y=5.0, arena_w=30.0)
@@ -180,10 +186,18 @@ class TestGeofenceGuardNode:
 
 class TestFailureMonitorNode:
 
+    def test_unavailable_pose_holds_position(self):
+        node = make_node()
+        node.own_pose_last_seen = None
+        assert FailureMonitorNode().tick(node) == BTStatus.SUCCESS
+        assert '"HOLD_POSITION"' in published_cmd(node)
+        assert '"pose_unavailable"' in published_cmd(node)
+
     def test_success_when_pose_is_stale(self):
         node = make_node(own_pose_last_seen=time.monotonic() - (POSE_STALE_S + 1.0))
         assert FailureMonitorNode().tick(node) == BTStatus.SUCCESS
-        assert '"FAILSAFE"' in published_cmd(node)
+        assert '"HOLD_POSITION"' in published_cmd(node)
+        assert '"pose_stale"' in published_cmd(node)
 
     def test_failure_when_pose_is_fresh(self):
         node = make_node(own_pose_last_seen=time.monotonic() - 0.1)
@@ -272,7 +286,7 @@ class TestPriorityOrderIntegration:
         result = self._full_tree().tick(node)
 
         assert result == BTStatus.SUCCESS
-        assert '"HOLD"' in published_cmd(node)
+        assert '"HOLD_POSITION"' in published_cmd(node)
         assert node.pending_task_cmd == cmd   # not consumed
 
     def test_geofence_fires_task_executor_never_runs(self):
@@ -288,7 +302,7 @@ class TestPriorityOrderIntegration:
         result = self._full_tree().tick(node)
 
         assert result == BTStatus.SUCCESS
-        assert '"RETURN_TO_BOUNDS"' in published_cmd(node)
+        assert '"HOLD_POSITION"' in published_cmd(node)
         assert node.pending_task_cmd == cmd   # not consumed
 
     def test_all_guards_clear_exploration_policy_runs(self):

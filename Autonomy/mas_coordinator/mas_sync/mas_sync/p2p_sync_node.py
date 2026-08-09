@@ -20,15 +20,16 @@ Parameters (ROS2 params, all overridable from launch file):
 
 import rclpy
 from rclpy.node import Node
-from rclpy.time import Time
 import math
 import time
-from typing import Dict, Set
+from typing import Dict
 
 from mas_interfaces.msg import (
-    PoseBeacon, SyncHello, SyncAck, MineDelta, MineBelief
+    PoseBeacon, SyncHello, SyncAck, MineDelta, MineBelief,
+    TaskAnnounce, TaskResult
 )
 from geometry_msgs.msg import PoseStamped   # source of local pose from explorer
+from std_msgs.msg import String
 
 from .belief_fusion import BeliefStore, msg_to_entry, entry_to_msg
 
@@ -62,6 +63,7 @@ class P2PSyncNode(Node):
         self.declare_parameter("t_sync",          5.0)
         self.declare_parameter("hello_interval",  3.0)
         self.declare_parameter("beacon_rate",     5.0)
+        self.declare_parameter("pose_timeout_s",  3.0)
 
         self.drone_id      = self.get_parameter("drone_id").value
         self.r_enter       = self.get_parameter("r_enter").value
@@ -69,6 +71,7 @@ class P2PSyncNode(Node):
         self.t_sync        = self.get_parameter("t_sync").value
         self.hello_interval= self.get_parameter("hello_interval").value
         beacon_rate        = self.get_parameter("beacon_rate").value
+        self.pose_timeout_s = self.get_parameter("pose_timeout_s").value
 
         # ── State ─────────────────────────────────────────────────────────────
         self.belief_store  = BeliefStore()
@@ -77,9 +80,11 @@ class P2PSyncNode(Node):
         self.my_y = 0.0
         self.my_z = 0.0
         self.my_heading = 0.0
-        self.my_state   = "SURVEY"  # default to SURVEY so beacons are valid
+        self.my_state   = "BOOT"
         self.my_battery = 100.0
         self._seq        = 0   # monotonic seq for dedup cache
+        self._pose_last_seen = None
+        self._task_targets = {}
 
         # ── Publishers ────────────────────────────────────────────────────────
         self.pub_beacon = self.create_publisher(PoseBeacon,  "/team/pose_beacon",  10)
@@ -109,6 +114,22 @@ class P2PSyncNode(Node):
             PoseStamped, f"/{self.drone_id}/pose",
             self._on_local_pose, 10)
 
+        self.create_subscription(
+            String, f"/{self.drone_id}/mission_state",
+            self._on_mission_state, 10)
+
+        self.create_subscription(
+            MineBelief, f"/{self.drone_id}/mine_candidates",
+            self._on_local_mine, 10)
+
+        self.create_subscription(
+            TaskResult, "/team/task_result",
+            self._on_task_result, 10)
+
+        self.create_subscription(
+            TaskAnnounce, "/team/task_announce",
+            self._on_task_announce, 20)
+
         # ── Timers ────────────────────────────────────────────────────────────
         self.create_timer(1.0 / beacon_rate, self._publish_beacon)
         self.create_timer(1.0,               self._sync_tick)   # neighbor management
@@ -122,6 +143,7 @@ class P2PSyncNode(Node):
         self.my_x = msg.pose.position.x
         self.my_y = msg.pose.position.y
         self.my_z = msg.pose.position.z
+        self._pose_last_seen = time.monotonic()
         # Yaw from quaternion (simplified — good enough for a heading display)
         q = msg.pose.orientation
         self.my_heading = math.degrees(
@@ -131,6 +153,11 @@ class P2PSyncNode(Node):
     # ── Beacon management ─────────────────────────────────────────────────────
 
     def _publish_beacon(self):
+        # Never advertise the zero-initialized pose, and stop advertising when
+        # localization is stale.  This prevents false BOOT readiness.
+        if (self._pose_last_seen is None or
+                time.monotonic() - self._pose_last_seen > self.pose_timeout_s):
+            return
         msg = PoseBeacon()
         msg.drone_id    = self.drone_id
         msg.x           = self.my_x
@@ -146,6 +173,9 @@ class P2PSyncNode(Node):
         """Update neighbor graph based on incoming beacons."""
         if msg.drone_id == self.drone_id:
             return  # ignore own beacon
+        if (self._pose_last_seen is None or
+                time.monotonic() - self._pose_last_seen > self.pose_timeout_s):
+            return
 
         dist = math.hypot(msg.x - self.my_x, msg.y - self.my_y)
         now  = time.monotonic()
@@ -254,22 +284,16 @@ class P2PSyncNode(Node):
 
     def _send_delta(self, target_id: str, their_count: int):
         """
-        Publish a MineDelta containing beliefs the target probably lacks.
-        We use known_mine_count as a rough watermark (MVP simplification).
+        Publish an anti-entropy snapshot.
+
+        ``known_mine_count`` is not a valid version cursor: two peers can have
+        the same count but different mine IDs or revisions.  BeliefStore
+        therefore returns the full small snapshot to guarantee convergence.
         """
         delta_entries = self.belief_store.get_delta_since(their_count)
         if not delta_entries:
             return
-
-        now_msg = self.get_clock().now().to_msg()
-        delta = MineDelta()
-        delta.sender_id = self.drone_id
-        delta.ttl       = 2
-        delta.stamp     = now_msg
-        delta.beliefs   = [
-            entry_to_msg(e, MineBelief, now_msg) for e in delta_entries
-        ]
-        self.pub_delta.publish(delta)
+        self._publish_entries(delta_entries, ttl=2)
         self.get_logger().debug(
             f"[{self.drone_id}] Sent {len(delta_entries)} beliefs to {target_id}")
 
@@ -278,28 +302,83 @@ class P2PSyncNode(Node):
         if msg.sender_id == self.drone_id:
             return   # ignore own messages
 
-        entries = [msg_to_entry(b) for b in msg.beliefs]
-        changed = self.belief_store.merge_batch(entries)
+        changed_entries = []
+        for belief_msg in msg.beliefs:
+            entry = msg_to_entry(belief_msg)
+            if self.belief_store.merge(entry):
+                changed_entries.append(entry)
 
-        if changed > 0:
+        if changed_entries:
             self.get_logger().debug(
-                f"[{self.drone_id}] Merged {changed} new/updated beliefs "
+                f"[{self.drone_id}] Merged {len(changed_entries)} new/updated beliefs "
                 f"from {msg.sender_id}")
 
-        # TTL-based relay: decrement and re-broadcast if still alive
-        if msg.ttl > 1:
-            relay = MineDelta()
-            relay.sender_id = self.drone_id   # we are the relay
-            relay.ttl       = msg.ttl - 1
-            relay.stamp     = self.get_clock().now().to_msg()
-            relay.beliefs   = msg.beliefs
-            self.pub_delta.publish(relay)
+        # Relay only entries that actually changed locally.  Relaying every
+        # duplicate multiplied traffic around loops even with a TTL.
+        if changed_entries and msg.ttl > 1:
+            self._publish_entries(changed_entries, ttl=msg.ttl - 1)
+
+    def _publish_entries(self, entries, ttl: int = 2):
+        now_msg = self.get_clock().now().to_msg()
+        delta = MineDelta()
+        delta.sender_id = self.drone_id
+        delta.ttl = ttl
+        delta.stamp = now_msg
+        delta.beliefs = [
+            entry_to_msg(entry, MineBelief, now_msg) for entry in entries
+        ]
+        self.pub_delta.publish(delta)
 
     # ── Public API for other nodes ─────────────────────────────────────────────
 
-    def update_state(self, state: str):
-        """Called by mission_logic_node to update the state string in beacons."""
-        self.my_state = state
+    def _on_mission_state(self, msg: String):
+        """Mirror the authoritative state owned by mission_logic_node."""
+        self.my_state = msg.data
+
+    def _on_local_mine(self, msg: MineBelief):
+        """Insert local detector output into the replicated belief store."""
+        entry = msg_to_entry(msg)
+        self._seq = max(self._seq, entry.seq)
+        if self.belief_store.merge(entry):
+            self._publish_entries([entry])
+
+    def _on_task_announce(self, msg: TaskAnnounce):
+        if msg.mine_id:
+            self._task_targets[msg.task_id] = (
+                msg.mine_id, msg.target_x, msg.target_y)
+
+    def _on_task_result(self, msg: TaskResult):
+        """Turn this drone's verification result into a versioned belief."""
+        if (msg.executor_id != self.drone_id or not msg.mine_id or
+                msg.outcome not in ("confirmed", "rejected", "uncertain")):
+            return
+        existing = self.belief_store.get(msg.mine_id)
+        if existing is None:
+            target = self._task_targets.get(msg.task_id)
+            if target is None or target[0] != msg.mine_id:
+                self.get_logger().warn(
+                    f"[{self.drone_id}] Cannot apply result for unknown mine "
+                    f"{msg.mine_id}")
+                return
+            existing_x, existing_y, existing_seq = target[1], target[2], 0
+        else:
+            existing_x, existing_y, existing_seq = (
+                existing.x, existing.y, existing.seq)
+
+        from .belief_fusion import BeliefEntry
+        self._seq = max(self._seq, existing_seq) + 1
+        updated = BeliefEntry(
+            mine_id=msg.mine_id,
+            x=existing_x,
+            y=existing_y,
+            confidence=float(msg.confidence),
+            status=msg.outcome,
+            last_updated_by=msg.executor_id,
+            seq=self._seq,
+            stamp_sec=time.time(),
+        )
+        if self.belief_store.merge(updated):
+            self._publish_entries([updated])
 
     def add_local_mine(self, mine_id: str, x: float, y: float,
                        confidence: float, status: str = "candidate"):
@@ -318,7 +397,8 @@ class P2PSyncNode(Node):
             seq=self._seq,
             stamp_sec=time.time(),
         )
-        self.belief_store.merge(entry)
+        if self.belief_store.merge(entry):
+            self._publish_entries([entry])
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
