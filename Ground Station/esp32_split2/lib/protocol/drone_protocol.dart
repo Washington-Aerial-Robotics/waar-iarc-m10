@@ -19,6 +19,18 @@ class DroneComms {
   static const int comSetCtrlMode = 0x4C;
   static const int comSetPosCmd = 0x4F;
   static const int comSetMotorCmd = 0x40 | 16;
+  static const int comSetActuation = 0x40 | 10;
+
+  // Low 3 bits of the firmware's flightMode byte (flight.h DEFAULT_MODES_MASK)
+  // - selects which flight_step() case governs kafenv.cmd.motors each tick.
+  static const int flightModeNull = 0;
+  static const int flightModeActuation = 3; // pass-through: leaves cmd.motors alone, so COM_SET_MOTORS packets reach the ESCs
+  static const int flightModeMotorSetpoint = 4; // overwrites cmd.motors from cmd.setpoints every tick - NOT what COM_SET_MOTORS needs
+
+  // Upper 5 bits (commander.h CMD_MODE_MASK) - the commander state machine.
+  // CMD_NULL_MODE skips commander_step()'s storage-read/failsafe logic entirely,
+  // which is what a manual bench/motor test wants.
+  static const int cmdModeNull = 16;
 
   static const int comRequestWifi = 0x61;
   static const int comReplyWifi = 0x21;
@@ -140,6 +152,38 @@ class DronePacketBuilder {
     messageId: messageId ?? nextMessageId(),
   );
 }
+
+  /// Builds a COM_SET_FLIGHTMODE packet. Payload matches the firmware's
+  /// packed `flightmode.h` struct: [flightMode: uint8][commandLength: uint8],
+  /// with commandLength=0 so no setpoint floats are required in the payload.
+  Uint8List flightMode({
+    required int cmdMode,
+    required int mode,
+    int? toId,
+    int? messageId,
+  }) {
+    return build(
+      toId: toId ?? defaultToId,
+      messageType: DroneComms.comSetCtrlMode,
+      payload: Uint8List.fromList([(cmdMode | mode) & 0xFF, 0]),
+      messageId: messageId ?? nextMessageId(),
+    );
+  }
+
+  /// Builds a COM_SET_ACTUATION packet. Firmware checks the byte against
+  /// MAXBYTE (0xFF) exactly, so anything else (including 0x00) disarms.
+  Uint8List actuation({
+    required bool armed,
+    int? toId,
+    int? messageId,
+  }) {
+    return singleByte(
+      messageType: DroneComms.comSetActuation,
+      value: armed ? 0xFF : 0x00,
+      toId: toId,
+      messageId: messageId,
+    );
+  }
 
   Uint8List singleByte({
     required int messageType,

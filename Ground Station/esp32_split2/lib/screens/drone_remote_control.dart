@@ -47,18 +47,31 @@ class DroneRemoteControl extends StatelessWidget {
 
             if (isLandscape) {
               // -------- LANDSCAPE: Top telemetry + Bottom sticks + center HUD --------
+              // c.maxWidth/maxHeight are measured before the Padding(pad) applied below,
+              // so work in the actual inner content area from here on.
+              final innerW = max(0.0, c.maxWidth - pad * 2);
+              final innerH = max(0.0, c.maxHeight - pad * 2);
+
               // Give the top panel a fixed-ish chunk so it never gets covered.
-              final topH = (c.maxHeight * 0.28).clamp(86.0, 130.0);
-              final bottomH = max(0.0, c.maxHeight - topH - pad);
+              final topH = (innerH * 0.28).clamp(86.0, 130.0);
+              final bottomH = max(0.0, innerH - topH - pad);
+
+              // VoiceControlPanel has no intrinsic width limit of its own (its Text
+              // children won't wrap inside an unconstrained Row child), so it must be
+              // sized here and included in the width budget below - previously it
+              // wasn't, which let it push the ARM/DISARM/KILL HUD panel off-screen.
+              const voicePanelWidth = 240.0;
+              const rowSpacing = 8.0;
 
               // Middle HUD width
-              final hudW = (c.maxWidth * 0.22).clamp(210.0, 300.0);
+              final hudW = (innerW * 0.22).clamp(180.0, 300.0);
 
-              // Compute stick size from remaining width/height
-              final availableW = max(0.0, c.maxWidth - hudW - pad * 2 - 16);
+              // Compute stick size from whatever's left after HUD, voice panel, and spacing.
+              final reservedW = hudW + voicePanelWidth + rowSpacing * 3;
+              final availableW = max(0.0, innerW - reservedW);
               final eachStickW = availableW / 2;
               // Subtract label space so no overflow
-              final stickSize = min(eachStickW, bottomH - 34).clamp(160.0, 460.0);
+              final stickSize = min(eachStickW, bottomH - 34).clamp(140.0, 460.0);
 
               return Padding(
                 padding: const EdgeInsets.all(pad),
@@ -112,9 +125,12 @@ class DroneRemoteControl extends StatelessWidget {
                             ),
                           ),
 
-                          const SizedBox(width: 8),
-                          const SizedBox(height: 8),
-                          const VoiceControlPanel(),
+                          const SizedBox(width: rowSpacing),
+                          const SizedBox(
+                            width: voicePanelWidth,
+                            child: VoiceControlPanel(),
+                          ),
+                          const SizedBox(width: rowSpacing),
 
                           // Right stick flush right
                           SizedBox(

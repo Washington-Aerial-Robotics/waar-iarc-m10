@@ -234,11 +234,30 @@ class DroneController extends ChangeNotifier {
       return;
     }
 
+    // Switch the firmware out of NULL_MODE (its boot default, which zeroes
+    // cmd.motors and forces actuation off every flight-loop tick) into
+    // ACTUATION_MODE, the one mode flight_step() leaves cmd.motors alone in -
+    // so the COM_SET_MOTORS stream from the control loop below actually
+    // reaches the ESCs. CMD_NULL_MODE keeps the commander state machine
+    // (storage replay, failsafes) out of the way for a manual bench test.
+    final modePacket = _packetBuilder.flightMode(
+      cmdMode: DroneComms.cmdModeNull,
+      mode: DroneComms.flightModeActuation,
+      toId: _targetDroneId,
+    );
+    client.sendBytes(modePacket);
+
+    final actuationPacket = _packetBuilder.actuation(
+      armed: true,
+      toId: _targetDroneId,
+    );
+    client.sendBytes(actuationPacket);
+
     if (_txTimer == null) {
       _startControlLoop();
     }
 
-    _pushLog('ARM: control loop started');
+    _pushLog('ARM: sent flight mode + actuation, control loop started');
   }
 
   void disarm() {
@@ -252,7 +271,19 @@ class DroneController extends ChangeNotifier {
 
     _stopControlLoop();
 
-    _pushLog('DISARM: controls zeroed');
+    if (client.isConnected) {
+      client.sendBytes(_packetBuilder.actuation(armed: false, toId: _targetDroneId));
+      // Also return to NULL_MODE so flight_step() actively re-zeroes
+      // cmd.motors every tick as a second line of defense, not just whatever
+      // relied on the actuation flag alone.
+      client.sendBytes(_packetBuilder.flightMode(
+        cmdMode: DroneComms.cmdModeNull,
+        mode: DroneComms.flightModeNull,
+        toId: _targetDroneId,
+      ));
+    }
+
+    _pushLog('DISARM: controls zeroed, actuation off');
     notifyListeners();
   }
 
