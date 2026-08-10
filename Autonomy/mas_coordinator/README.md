@@ -9,7 +9,8 @@ a 420 second mission.
 - `mas_mission` is the only owner of mission state. It publishes the current
   state on `/{drone_id}/mission_state` once per second.
 - `mas_sync` is the only publisher of that drone's `PoseBeacon`. It does not
-  publish until local pose is valid and stops when pose becomes stale.
+  publish until local pose is valid and stops when pose becomes stale. Mission's
+  read-only belief mirror uses the same canonical `BeliefStore` merge rules.
 - `mas_task` owns auctions and task execution state. It bids only after both a
   fresh local pose and an executable mission state are available.
 - The autonomy/planner process owns vehicle motion, mine detection, and task

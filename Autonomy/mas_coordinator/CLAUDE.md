@@ -23,6 +23,9 @@ mine candidates, and task results must travel over ROS topics.
 - Task bidding fails closed without a fresh pose or recognized mission state.
 - Safety guards publish `HOLD_POSITION`; an unknown command must never release
   a hold in the autonomy adapter.
+- Collision checks use only fresh own and neighbor poses. A known neighbor with
+  a stale or missing timestamp triggers `HOLD_POSITION` rather than a distance
+  calculation using old coordinates.
 - The final occupancy grid starts unknown, never implicitly free, and has a
   valid origin quaternion.
 
@@ -30,6 +33,8 @@ mine candidates, and task results must travel over ROS topics.
 
 - Local `mine_candidates` must be inserted into `BeliefStore` and published as
   `MineDelta`.
+- Mission's read-only belief mirror must call the canonical `BeliefStore` merge
+  policy through `BeliefMirror`; do not duplicate its ordering or sticky rules.
 - Only the result executor's sync node versions a `TaskResult` into a belief.
 - Confirmed beliefs are never downgraded by rejected/candidate updates.
 - Equal versions use status precedence (`confirmed > rejected > uncertain >

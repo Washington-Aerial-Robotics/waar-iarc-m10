@@ -38,6 +38,7 @@ from nav_msgs.msg import OccupancyGrid
 from geometry_msgs.msg import PoseStamped
 
 from .state_machine import StateMachine, MissionContext, ARENA_WIDTH, ARENA_HEIGHT, MISSION_DURATION
+from .belief_mirror import BeliefMirror
 from .bt_runner import (
     PrioritySelector,
     CollisionGuardNode,
@@ -106,7 +107,8 @@ class MissionLogicNode(Node):
         self.pending_task_cmd: Optional[str] = None
 
         # Mine beliefs (mirrored from sync node via /team/mine_delta)
-        self.mine_beliefs: Dict[str, dict] = {}      # mine_id → dict
+        self._belief_mirror = BeliefMirror()
+        self.mine_beliefs = self._belief_mirror.beliefs  # mine_id → dict
         self.path_verified = False
 
         # PATH_VERIFY task tracking
@@ -211,33 +213,7 @@ class MissionLogicNode(Node):
     # ── Belief mirroring ──────────────────────────────────────────────────────
 
     def _on_mine_delta(self, msg: MineDelta):
-        for b in msg.beliefs:
-            existing = self.mine_beliefs.get(b.mine_id)
-            if existing is not None:
-                old_seq = existing.get("seq", -1)
-                if b.seq < old_seq:
-                    continue
-                if b.seq == old_seq:
-                    ranks = {
-                        "candidate": 0, "uncertain": 1,
-                        "rejected": 2, "confirmed": 3,
-                    }
-                    if (ranks.get(b.status, -1), b.confidence) <= (
-                            ranks.get(existing["status"], -1),
-                            existing["confidence"]):
-                        continue
-
-            status = b.status
-            if (existing is not None and existing["status"] == "confirmed"
-                    and status != "confirmed"):
-                status = "confirmed"
-            self.mine_beliefs[b.mine_id] = {
-                "mine_id":    b.mine_id,
-                "x": b.x, "y": b.y,
-                "confidence": b.confidence,
-                "status":     status,
-                "seq":        b.seq,
-            }
+        self._belief_mirror.merge_delta(msg)
 
     def _on_task_result(self, msg: TaskResult):
         # ── Path verification complete ─────────────────────────────────────────

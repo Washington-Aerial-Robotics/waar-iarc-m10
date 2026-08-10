@@ -35,7 +35,9 @@ def make_node(
     own_x=5.0, own_y=5.0,
     arena_w=30.0, arena_h=30.0,
     team_poses=None,
+    team_last_seen=None,
     own_pose_last_seen=None,
+    pose_timeout_s=POSE_STALE_S,
     pending_task_cmd=None,
     sm_state="SURVEY",
 ):
@@ -47,10 +49,15 @@ def make_node(
     node.arena_w             = arena_w
     node.arena_h             = arena_h
     node.team_poses          = team_poses if team_poses is not None else {}
+    node.team_last_seen      = (
+        team_last_seen if team_last_seen is not None
+        else {did: time.monotonic() for did in node.team_poses}
+    )
     node.own_pose_last_seen  = (
         own_pose_last_seen if own_pose_last_seen is not None
         else time.monotonic()
     )
+    node.pose_timeout_s      = pose_timeout_s
     node.pending_task_cmd    = pending_task_cmd
     node.sm.state            = sm_state
     return node
@@ -147,6 +154,59 @@ class TestCollisionGuardNode:
         node = make_node(own_x=0.0, own_y=0.0,
                          team_poses={"d2": (R_COLLISION - 0.01, 0.0)})
         assert CollisionGuardNode().tick(node) == BTStatus.SUCCESS
+
+    def test_stale_neighbor_pose_holds_instead_of_using_old_distance(self):
+        fixed_now = 1000.0
+        node = make_node(
+            team_poses={"d2": (20.0, 20.0)},
+            team_last_seen={"d2": fixed_now - POSE_STALE_S - 0.001},
+            own_pose_last_seen=fixed_now,
+        )
+        with patch("mas_mission.bt_runner.time.monotonic", return_value=fixed_now):
+            result = CollisionGuardNode().tick(node)
+
+        assert result == BTStatus.SUCCESS
+        assert '"neighbor_pose_stale"' in published_cmd(node)
+        assert '"neighbor_id": "d2"' in published_cmd(node)
+
+    def test_missing_neighbor_timestamp_is_treated_as_stale(self):
+        fixed_now = 1000.0
+        node = make_node(
+            team_poses={"d2": (20.0, 20.0)},
+            team_last_seen={},
+            own_pose_last_seen=fixed_now,
+        )
+        with patch("mas_mission.bt_runner.time.monotonic", return_value=fixed_now):
+            result = CollisionGuardNode().tick(node)
+
+        assert result == BTStatus.SUCCESS
+        assert '"neighbor_pose_stale"' in published_cmd(node)
+
+    def test_stale_own_pose_is_deferred_to_failure_monitor(self):
+        fixed_now = 1000.0
+        node = make_node(
+            team_poses={"d2": (5.1, 5.0)},
+            team_last_seen={"d2": fixed_now},
+            own_pose_last_seen=fixed_now - POSE_STALE_S - 0.001,
+        )
+        with patch("mas_mission.bt_runner.time.monotonic", return_value=fixed_now):
+            result = CollisionGuardNode().tick(node)
+
+        assert result == BTStatus.FAILURE
+        node._publish_cmd.assert_not_called()
+
+    def test_neighbor_pose_at_freshness_boundary_is_used(self):
+        fixed_now = 1000.0
+        node = make_node(
+            team_poses={"d2": (20.0, 20.0)},
+            team_last_seen={"d2": fixed_now - POSE_STALE_S},
+            own_pose_last_seen=fixed_now,
+        )
+        with patch("mas_mission.bt_runner.time.monotonic", return_value=fixed_now):
+            result = CollisionGuardNode().tick(node)
+
+        assert result == BTStatus.FAILURE
+        node._publish_cmd.assert_not_called()
 
 
 # ── GeofenceGuardNode ─────────────────────────────────────────────────────────

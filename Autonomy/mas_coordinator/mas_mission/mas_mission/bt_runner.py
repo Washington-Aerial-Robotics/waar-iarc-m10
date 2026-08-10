@@ -96,15 +96,39 @@ class CollisionGuardNode(BTNode):
     def tick(self, node: Any) -> BTStatus:
         if node.own_pose_last_seen is None:
             return BTStatus.FAILURE
+
+        now = time.monotonic()
+        pose_timeout_s = getattr(node, "pose_timeout_s", POSE_STALE_S)
+        if now - node.own_pose_last_seen > pose_timeout_s:
+            # FailureMonitorNode owns the diagnostic and HOLD for stale own pose.
+            return BTStatus.FAILURE
+
         ox, oy = node.own_x, node.own_y
         for did, (nx, ny) in node.team_poses.items():
+            last_seen = node.team_last_seen.get(did)
+            age = math.inf if last_seen is None else now - last_seen
+            if age > pose_timeout_s:
+                age_text = "unknown" if last_seen is None else f"{age:.1f}s"
+                node.get_logger().warn(
+                    f"[{node.drone_id}] Neighbour {did} pose stale "
+                    f"({age_text}; limit {pose_timeout_s:.1f}s) - issuing HOLD")
+                node._publish_cmd(json.dumps({
+                    "cmd": "HOLD_POSITION",
+                    "reason": "neighbor_pose_stale",
+                    "neighbor_id": did,
+                }))
+                return BTStatus.SUCCESS
+
             dist = math.hypot(nx - ox, ny - oy)
             if dist < R_COLLISION:
                 node.get_logger().warn(
                     f"[{node.drone_id}] COLLISION risk with {did} "
                     f"dist={dist:.2f}m — issuing HOLD")
                 node._publish_cmd(json.dumps({
-                    "cmd": "HOLD_POSITION", "reason": "collision_risk"}))
+                    "cmd": "HOLD_POSITION",
+                    "reason": "collision_risk",
+                    "neighbor_id": did,
+                }))
                 return BTStatus.SUCCESS
         return BTStatus.FAILURE
 
