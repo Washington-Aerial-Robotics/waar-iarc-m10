@@ -85,7 +85,12 @@ struct drone_state {
   struct droneinfo {           //IDENTIFICATION INFORMATION
     STDBYTE deviceID;          //Character designating a unique ID of a drone
     STDBYTE flightMode;        //Current flight mode status of the drone
-    STDBYTE triggerLock;       //Device software trigger for getting a thread lock
+    volatile STDBYTE triggerLock; //Device software trigger for getting a thread lock - volatile because FLTSYNC
+                                //busy-waits on this from one core while flight_step()'s tail busy-waits on it
+                                //from the other; without volatile the compiler can cache a stale read in either
+                                //loop and the handshake hangs forever (confirmed: com_task stuck in FLTSYNC,
+                                //flight_task never observing triggerLock go nonzero, SET_FLIGHTMODE's actual
+                                //write never reached despite the packet validating and replying SUCCESS).
     bool actuation;            //Configuration for if motor actuation is enabled or not
     unsigned int version;      //Flight software version
     float battery;             //Percentage amount of battery left
