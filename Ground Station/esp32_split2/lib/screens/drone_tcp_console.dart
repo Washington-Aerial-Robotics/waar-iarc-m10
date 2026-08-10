@@ -23,7 +23,7 @@ class _DroneTcpConsoleState extends State<DroneTcpConsole> {
 
   static const int _fromId = 0x47; // 'G'
   // static const int _toId = 0x42;   // 'B'
-  final droneIdCtrl = TextEditingController(text: 'A');
+  final droneIdCtrl = TextEditingController(text: 'U');
 
   final _log = <String>[];
   StreamSubscription<String>? _sub;

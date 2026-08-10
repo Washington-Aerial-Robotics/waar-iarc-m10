@@ -25,7 +25,9 @@ class DroneController extends ChangeNotifier {
   final DronePacketBuilder _packetBuilder;
 
   static const int appDeviceId = 0x47; // 'G'
-  static const int defaultDroneDeviceId = 0x41; // 'A'
+  // firmware_full.ino identifies this airframe as 'U'. Packets addressed to
+  // another device ID are intentionally ignored by the firmware.
+  static const int defaultDroneDeviceId = 0x55; // 'U'
 
   int _targetDroneId = defaultDroneDeviceId;
 
@@ -223,7 +225,16 @@ class DroneController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void arm() {
+  // Firmware's com_step() (communication.cpp) reads all currently-available
+  // TCP bytes into one buffer and processes only the first packet in it, with
+  // no leftover-byte carryover - two sendBytes() calls with no gap can land
+  // in the same read and silently drop the second packet. This delay is a
+  // stopgap to keep the two sends in separate TCP reads; the real fix is
+  // proper per-packet framing in wifiReceiving()/com_step() on the firmware
+  // side.
+  static const _packetGap = Duration(milliseconds: 60);
+
+  Future<void> arm() async {
     if (!client.isConnected) {
       _pushLog('Cannot ARM: not connected');
       return;
@@ -246,6 +257,7 @@ class DroneController extends ChangeNotifier {
       toId: _targetDroneId,
     );
     client.sendBytes(modePacket);
+    await Future.delayed(_packetGap);
 
     final actuationPacket = _packetBuilder.actuation(
       armed: true,
@@ -260,7 +272,7 @@ class DroneController extends ChangeNotifier {
     _pushLog('ARM: sent flight mode + actuation, control loop started');
   }
 
-  void disarm() {
+  Future<void> disarm() async {
     _voiceResetTimer?.cancel();
     _voiceResetTimer = null;
 
@@ -273,6 +285,7 @@ class DroneController extends ChangeNotifier {
 
     if (client.isConnected) {
       client.sendBytes(_packetBuilder.actuation(armed: false, toId: _targetDroneId));
+      await Future.delayed(_packetGap);
       // Also return to NULL_MODE so flight_step() actively re-zeroes
       // cmd.motors every tick as a second line of defense, not just whatever
       // relied on the actuation flag alone.
