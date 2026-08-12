@@ -10,7 +10,8 @@
 #include <string.h>
 #endif
 
-#define RADIUS 111.11111111111111111111111111111111111111111111111111
+#define METERS_PER_DEGREE 111111.0
+#define PI 3.14159265359
 
 extern SENSOR_BUFFERTYPE;
 
@@ -69,21 +70,24 @@ void peripheral_samm10qLoop() {
       char upperlat[] = { lat[0], lat[1], 0 };
       SENSOR_BUFFER.gps.latitude = ( strtod( upperlat, NULLPTR ) + strtod( &lat[2], NULLPTR ) / 60 ) * ( latdir[0] == 'S' ? -1 : 1 );
       char upperlng[] = { lng[0], lng[1], lng[2], 0 };
-      SENSOR_BUFFER.gps.longitude = ( strtod( upperlng, NULLPTR ) + strtod( &lat[3], NULLPTR ) / 60 ) * ( lngdir[0] == 'W' ? -1 : 1 );
+      SENSOR_BUFFER.gps.longitude = ( strtod( upperlng, NULLPTR ) + strtod( &lng[3], NULLPTR ) / 60 ) * ( lngdir[0] == 'W' ? -1 : 1 );
       SENSOR_BUFFER.gps.altitude = strtod( alt, NULLPTR );
       DPRINTF( "[P] GPS Position: Latitude=%.3f, Longitude=%.3f, Altitude=%.3f", 
           SENSOR_BUFFER.gps.latitude, SENSOR_BUFFER.gps.longitude, SENSOR_BUFFER.gps.altitude );
       if( sam.validoffset ) {
-        SENSOR_BUFFER.gps.position.x = ( float )( RADIUS * ( SENSOR_BUFFER.gps.latitude - sam.coords[0] ) );
-        SENSOR_BUFFER.gps.position.y = ( float )( RADIUS * ( SENSOR_BUFFER.gps.longitude - sam.coords[1] ) * cos( SENSOR_BUFFER.gps.latitude ) );
+        const double latitudeRadians = SENSOR_BUFFER.gps.latitude * PI / 180.0;
+        SENSOR_BUFFER.gps.position.x = ( float )( METERS_PER_DEGREE * ( SENSOR_BUFFER.gps.longitude - sam.coords[1] ) * cos( latitudeRadians ) ); //east
+        SENSOR_BUFFER.gps.position.y = ( float )( METERS_PER_DEGREE * ( SENSOR_BUFFER.gps.latitude - sam.coords[0] ) ); //north
         SENSOR_BUFFER.gps.position.z = ( float )( SENSOR_BUFFER.gps.altitude - sam.coords[2] );
         SENSOR_BUFFER.gps.update = true;
         DPRINTF( "[P] GPS Positioning Data: Value=[ %.3f, %.3f, %.3f ]", 
             SENSOR_BUFFER.gps.position.x, SENSOR_BUFFER.gps.position.y, SENSOR_BUFFER.gps.position.z );
       } else {
+        //first valid fix becomes the reference origin for all subsequent relative positions
         sam.coords[0] = SENSOR_BUFFER.gps.latitude;
         sam.coords[1] = SENSOR_BUFFER.gps.longitude;
         sam.coords[2] = SENSOR_BUFFER.gps.altitude;
+        sam.validoffset = true;
       }
     }
     sam.dataLen = 0;
@@ -91,9 +95,9 @@ void peripheral_samm10qLoop() {
 }
 
 void peripheral_samm10qInit() {
-  firmware_registerPeripheral( { "samm10q", 0, sizeof( sam ), &sam, &peripheral_samm10qLoop, &peripheral_samm10qInit } );
+  firmware_registerPeripheral( { "samm10q", 0, sizeof( sam ), &sam, &peripheral_samm10qInit, &peripheral_samm10qLoop } );
   DPRINTF( "[P] Initializing SAMM10Q\n" );
-  Serial1.begin( 9600, SERIAL_8N1, UART1RX, UART1TX );
+  Serial1.begin( 115200, SERIAL_8N1, UART1RX, UART1TX );
   sam.dataLen = 0;
   sam.readIndex = 0;
   memset( sam.readData, 0, sizeof( sam.readData ) );
