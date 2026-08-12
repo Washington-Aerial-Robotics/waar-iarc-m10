@@ -38,6 +38,30 @@ class DroneComms {
   static const int comSetWifi = 0x62;
 
   static const int comKill = 0x40 | 35;
+  static const int comSetAutonomyMode = 0x40 | 36;
+  static const int comSetFormationSlot = 0x40 | 37;
+  static const int comSetQualCommand = 0x40 | 38;
+
+  // kafenv.info.autonomyMode values (commander.h) - orthogonal to flightMode.
+  static const int autonomyManual = 0;
+  static const int autonomyQualification = 1;
+  static const int autonomyMineSearch = 2;
+
+  // QUALCMD_* (commander.h) - COM_SET_QUALCOMMAND payload values.
+  static const int qualCmdLaunch = 1;
+  static const int qualCmdBeginOrbit = 2;
+  static const int qualCmdHold = 3;
+  static const int qualCmdLand = 4;
+  static const int qualCmdAbort = 5;
+
+  // QUAL_* (commander.h) - kafenv.info.qualState values, for display.
+  static const int qualStateBoot = 0;
+  static const int qualStateClimbToFormation = 1;
+  static const int qualStateHoverHold = 2;
+  static const int qualStateOrbit = 3;
+  static const int qualStatePostOrbitHold = 4;
+  static const int qualStateLanding = 5;
+  static const int qualStateFinish = 6;
 
   // Maps to COM_REQUEST_STATE / COM_REPLY_STATE — the "dronestate" reply,
   // which carries position + flight status. There is no dedicated
@@ -185,6 +209,52 @@ class DronePacketBuilder {
     );
   }
 
+  /// Builds a COM_SET_AUTONOMYMODE packet. Firmware rejects this while
+  /// armed and never itself arms/moves anything on receipt - mode
+  /// selection and arming are always two separate operator actions.
+  Uint8List autonomyMode({
+    required int mode,
+    int? toId,
+    int? messageId,
+  }) {
+    return singleByte(
+      messageType: DroneComms.comSetAutonomyMode,
+      value: mode,
+      toId: toId,
+      messageId: messageId,
+    );
+  }
+
+  /// Builds a COM_SET_FORMATIONSLOT packet (0-3). Firmware rejects this
+  /// while armed.
+  Uint8List formationSlot({
+    required int slot,
+    int? toId,
+    int? messageId,
+  }) {
+    return singleByte(
+      messageType: DroneComms.comSetFormationSlot,
+      value: slot,
+      toId: toId,
+      messageId: messageId,
+    );
+  }
+
+  /// Builds a COM_SET_QUALCOMMAND packet (DroneComms.qualCmd*). Only
+  /// acted on while autonomyMode == autonomyQualification.
+  Uint8List qualCommand({
+    required int command,
+    int? toId,
+    int? messageId,
+  }) {
+    return singleByte(
+      messageType: DroneComms.comSetQualCommand,
+      value: command,
+      toId: toId,
+      messageId: messageId,
+    );
+  }
+
   Uint8List singleByte({
     required int messageType,
     required int value,
@@ -290,6 +360,7 @@ class DroneTelemetry {
     this.batteryPercent,
     this.deviceId,
     this.firmwareVersion,
+    this.armed,
     this.autonomyMode,
     this.formationSlot,
     this.qualState,
@@ -309,6 +380,9 @@ class DroneTelemetry {
   final double? batteryPercent;
   final int? deviceId;
   final int? firmwareVersion;
+  // kafenv.info.actuation - true while motor actuation is enabled
+  // (armed), independent of which flightMode is selected.
+  final bool? armed;
 
   // AUTONOMY_MANUAL/QUALIFICATION/MINE_SEARCH (see commander.h) - which
   // autonomy behavior the drone is running, phone-selected via
@@ -334,6 +408,7 @@ class DroneTelemetry {
       batteryPercent: update.batteryPercent ?? batteryPercent,
       deviceId: update.deviceId ?? deviceId,
       firmwareVersion: update.firmwareVersion ?? firmwareVersion,
+      armed: update.armed ?? armed,
       autonomyMode: update.autonomyMode ?? autonomyMode,
       formationSlot: update.formationSlot ?? formationSlot,
       qualState: update.qualState ?? qualState,
@@ -384,6 +459,7 @@ class DroneTelemetry {
     return DroneTelemetry(
       deviceId: payload[0],
       flightMode: payload[1],
+      armed: payload[3] != 0,
       firmwareVersion: bd.getUint32(4, Endian.little),
       batteryPercent: bd.getFloat32(8, Endian.little),
       autonomyMode: payload.length >= 13 ? payload[12] : null,

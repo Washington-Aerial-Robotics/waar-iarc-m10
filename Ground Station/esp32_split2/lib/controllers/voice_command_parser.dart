@@ -9,6 +9,22 @@ enum VoiceCommand {
   stop,
   up,
   down,
+  qualLaunch,
+  qualBeginOrbit,
+  qualHold,
+  qualLand,
+  qualAbort,
+}
+
+/// True for the five Qualification-mode commands (qualLaunch..qualAbort) -
+/// lets VoiceCommandController tell them apart from the manual/joystick
+/// commands above without a second enum.
+bool isQualificationVoiceCommand(VoiceCommand command) {
+  return command == VoiceCommand.qualLaunch ||
+      command == VoiceCommand.qualBeginOrbit ||
+      command == VoiceCommand.qualHold ||
+      command == VoiceCommand.qualLand ||
+      command == VoiceCommand.qualAbort;
 }
 
 /// Parses only well-defined command phrases. This deliberately avoids fuzzy
@@ -88,6 +104,17 @@ VoiceCommand? parseVoiceCommand(String transcript) {
     'descend': VoiceCommand.down,
     'decrease altitude': VoiceCommand.down,
     'down': VoiceCommand.down,
+    // Qualification-mode commands - deliberately multi-word and distinct
+    // from every manual phrase above (including the existing bare "hold"
+    // -> stop mapping), so a recognized qualification phrase can never be
+    // misread as an ordinary manual command or vice versa, independent of
+    // whatever mode-based routing the caller also does.
+    'qualification launch': VoiceCommand.qualLaunch,
+    'begin orbit': VoiceCommand.qualBeginOrbit,
+    'start orbit': VoiceCommand.qualBeginOrbit,
+    'orbit hold': VoiceCommand.qualHold,
+    'qualification land': VoiceCommand.qualLand,
+    'abort qualification': VoiceCommand.qualAbort,
   };
 
   return phrases[phrase];

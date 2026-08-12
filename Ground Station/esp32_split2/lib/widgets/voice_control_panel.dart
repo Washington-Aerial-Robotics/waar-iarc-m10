@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../controllers/drone_controller.dart';
 import '../controllers/voice_command_controller.dart';
+import '../protocol/drone_protocol.dart';
 
 class VoiceControlPanel extends StatelessWidget {
   const VoiceControlPanel({
@@ -14,9 +15,16 @@ class VoiceControlPanel extends StatelessWidget {
     final voice = context.watch<VoiceCommandController>();
     final drone = context.watch<DroneController>();
 
+    // Qualification voice commands (launch/begin orbit/orbit hold/land/
+    // abort) don't need the manual joystick TX loop running - the
+    // firmware's own onboard state machine drives the flight, not
+    // continuous joystick packets - so this panel is usable in
+    // Qualification mode without arming the manual control loop first.
+    final inQualificationMode =
+        drone.telemetry.autonomyMode == DroneComms.autonomyQualification;
     final enabled = drone.isConnected &&
-        drone.isControlLoopRunning &&
-        !voice.initializing;
+        !voice.initializing &&
+        (drone.isControlLoopRunning || inQualificationMode);
 
     return Card(
       elevation: 2,
@@ -51,11 +59,14 @@ class VoiceControlPanel extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              drone.isControlLoopRunning
-                  ? 'Say: up, down, hover, stop, forward, '
-                      'backward, move left, move right, '
-                      'rotate left, or rotate right.'
-                  : 'ARM the drone before using voice commands.',
+              inQualificationMode
+                  ? 'Say: qualification launch, begin orbit, orbit hold, '
+                      'qualification land, or abort qualification.'
+                  : drone.isControlLoopRunning
+                      ? 'Say: up, down, hover, stop, forward, '
+                          'backward, move left, move right, '
+                          'rotate left, or rotate right.'
+                      : 'ARM the drone before using voice commands.',
               style: const TextStyle(
                 fontSize: 13,
               ),

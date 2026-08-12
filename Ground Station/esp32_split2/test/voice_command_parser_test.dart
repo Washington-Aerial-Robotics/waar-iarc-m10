@@ -19,4 +19,23 @@ void main() {
     expect(parseVoiceCommand('move'), isNull);
     expect(parseVoiceCommand('fly into the building'), isNull);
   });
+
+  test('recognizes the qualification command vocabulary', () {
+    expect(parseVoiceCommand('Qualification launch'), VoiceCommand.qualLaunch);
+    expect(parseVoiceCommand('begin orbit'), VoiceCommand.qualBeginOrbit);
+    expect(parseVoiceCommand('start orbit'), VoiceCommand.qualBeginOrbit);
+    expect(parseVoiceCommand('orbit hold'), VoiceCommand.qualHold);
+    expect(parseVoiceCommand('Qualification land!'), VoiceCommand.qualLand);
+    expect(parseVoiceCommand('abort qualification'), VoiceCommand.qualAbort);
+  });
+
+  test('qualification phrases never collide with manual ones', () {
+    // Bare "hold" must keep meaning the manual stop command, not the
+    // qualification orbit-hold command - they are deliberately different
+    // phrases so mode-based routing is never the only thing preventing
+    // ambiguity.
+    expect(parseVoiceCommand('hold'), VoiceCommand.stop);
+    expect(isQualificationVoiceCommand(VoiceCommand.stop), isFalse);
+    expect(isQualificationVoiceCommand(VoiceCommand.qualHold), isTrue);
+  });
 }

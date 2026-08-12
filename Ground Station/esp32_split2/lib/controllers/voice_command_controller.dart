@@ -3,6 +3,7 @@ import 'package:speech_to_text/speech_recognition_error.dart';
 import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 
+import '../protocol/drone_protocol.dart';
 import 'drone_controller.dart';
 import 'voice_command_parser.dart';
 
@@ -153,6 +154,34 @@ class VoiceCommandController extends ChangeNotifier {
   void _executeCommand(String phrase) {
     final command = parseVoiceCommand(phrase);
 
+    // Qualification commands are only acted on while Qualification mode is
+    // actually selected, and manual commands are ignored while it is -
+    // this is a second, independent safeguard on top of the parser's own
+    // distinct phrase set (voice_command_parser.dart), and matches the
+    // firmware's own behavior (commander_qualificationCommand() ignores
+    // QUALCMD_* while autonomyMode != AUTONOMY_QUALIFICATION).
+    final inQualificationMode = droneController.telemetry.autonomyMode ==
+        DroneComms.autonomyQualification;
+
+    if (command != null && isQualificationVoiceCommand(command)) {
+      if (!inQualificationMode) {
+        _lastCommand = 'ignored (not in Qualification mode): $phrase';
+        notifyListeners();
+        return;
+      }
+      _executeQualificationCommand(command);
+      return;
+    }
+
+    if (inQualificationMode) {
+      // Manual commands are meaningless (and unwired) while Qualification
+      // is selected - the firmware's own state machine, not joystick
+      // input, is what moves the drone in this mode.
+      _lastCommand = 'ignored (Qualification mode active): $phrase';
+      notifyListeners();
+      return;
+    }
+
     if (command == VoiceCommand.rotateLeft) {
       droneController.voiceRotateLeft();
       _lastCommand = 'rotate left';
@@ -187,6 +216,34 @@ class VoiceCommandController extends ChangeNotifier {
       _lastCommand = 'unrecognized: $phrase';
     }
 
+    notifyListeners();
+  }
+
+  void _executeQualificationCommand(VoiceCommand command) {
+    switch (command) {
+      case VoiceCommand.qualLaunch:
+        droneController.sendQualCommand(DroneComms.qualCmdLaunch);
+        _lastCommand = 'qualification launch';
+        break;
+      case VoiceCommand.qualBeginOrbit:
+        droneController.sendQualCommand(DroneComms.qualCmdBeginOrbit);
+        _lastCommand = 'begin orbit';
+        break;
+      case VoiceCommand.qualHold:
+        droneController.sendQualCommand(DroneComms.qualCmdHold);
+        _lastCommand = 'orbit hold';
+        break;
+      case VoiceCommand.qualLand:
+        droneController.sendQualCommand(DroneComms.qualCmdLand);
+        _lastCommand = 'qualification land';
+        break;
+      case VoiceCommand.qualAbort:
+        droneController.sendQualCommand(DroneComms.qualCmdAbort);
+        _lastCommand = 'abort qualification';
+        break;
+      default:
+        break;
+    }
     notifyListeners();
   }
 

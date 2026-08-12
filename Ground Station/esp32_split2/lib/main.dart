@@ -5,6 +5,7 @@ import 'controllers/drone_controller.dart';
 import 'controllers/voice_command_controller.dart';
 import 'screens/drone_remote_control.dart';
 import 'screens/drone_tcp_console.dart';
+import 'screens/qualification_control.dart';
 import 'services/tcp_client.dart';
 
 void main() {
@@ -65,6 +66,7 @@ class _NavigationShellState
   final List<Widget> _pages = const [
     DroneTcpConsole(),
     DroneRemoteControl(),
+    QualificationControl(),
   ];
 
   @override
@@ -89,6 +91,10 @@ class _NavigationShellState
           NavigationDestination(
             icon: Icon(Icons.gamepad),
             label: 'Remote',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.rule),
+            label: 'Mode',
           ),
         ],
       ),

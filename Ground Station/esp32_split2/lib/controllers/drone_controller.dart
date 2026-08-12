@@ -53,6 +53,7 @@ class DroneController extends ChangeNotifier {
 
   Timer? _txTimer;
   Timer? _voiceResetTimer;
+  Timer? _telemetryTimer;
 
   bool _killed = false;
 
@@ -140,6 +141,16 @@ class DroneController extends ChangeNotifier {
       await _packetSub?.cancel();
       _packetSub = client.packets.listen(_handleIncomingPacket);
 
+      // Polls COM_REQUEST_INFO (deviceID/flightMode/version/battery/
+      // autonomyMode/formationSlot/qualState/qualRevolutions) so the mode
+      // selector and qualification status display have live data - nothing
+      // else in this app requests this reply on a schedule.
+      _telemetryTimer?.cancel();
+      _telemetryTimer = Timer.periodic(
+        const Duration(milliseconds: 1000),
+        (_) => _requestTelemetry(),
+      );
+
       // Do not begin sending motor packets immediately after connection.
       notifyListeners();
     } catch (error) {
@@ -156,6 +167,9 @@ class DroneController extends ChangeNotifier {
 
     _voiceResetTimer?.cancel();
     _voiceResetTimer = null;
+
+    _telemetryTimer?.cancel();
+    _telemetryTimer = null;
 
     await _sub?.cancel();
     _sub = null;
@@ -326,6 +340,63 @@ class DroneController extends ChangeNotifier {
 
     _pushLog('Sent KILL to $targetDroneCharacter');
     notifyListeners();
+  }
+
+  void _requestTelemetry() {
+    if (!client.isConnected) {
+      return;
+    }
+    client.sendBytes(_packetBuilder.headerOnly(
+      messageType: DroneComms.comRequestInfo,
+      toId: _targetDroneId,
+    ));
+  }
+
+  /// Selects MANUAL/QUALIFICATION/MINE_SEARCH (DroneComms.autonomy*).
+  /// Firmware itself refuses this while armed and never arms/moves
+  /// anything on receipt - this only ever changes which mode is
+  /// *selected*, matching "mode selection must never automatically arm
+  /// or launch a drone".
+  void setAutonomyMode(int mode) {
+    if (!client.isConnected) {
+      _pushLog('Cannot set autonomy mode: not connected');
+      return;
+    }
+    client.sendBytes(_packetBuilder.autonomyMode(
+      mode: mode,
+      toId: _targetDroneId,
+    ));
+    _pushLog('Set autonomy mode: $mode');
+  }
+
+  /// Sets this drone's formation slot (0-3) - phone-set at boot/arm time,
+  /// before a Qualification LAUNCH. Firmware refuses this while armed.
+  void setFormationSlot(int slot) {
+    if (!client.isConnected) {
+      _pushLog('Cannot set formation slot: not connected');
+      return;
+    }
+    client.sendBytes(_packetBuilder.formationSlot(
+      slot: slot,
+      toId: _targetDroneId,
+    ));
+    _pushLog('Set formation slot: $slot');
+  }
+
+  /// Sends a high-level qualification command (DroneComms.qualCmd*) - the
+  /// only thing that actually moves a qualification flight forward once
+  /// armed. Only acted on by the firmware while autonomyMode ==
+  /// autonomyQualification.
+  void sendQualCommand(int command) {
+    if (!client.isConnected) {
+      _pushLog('Cannot send qualification command: not connected');
+      return;
+    }
+    client.sendBytes(_packetBuilder.qualCommand(
+      command: command,
+      toId: _targetDroneId,
+    ));
+    _pushLog('Sent qualification command: $command');
   }
 
   void startControlLoop() {
