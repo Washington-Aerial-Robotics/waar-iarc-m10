@@ -118,6 +118,14 @@ struct drone_state {
     coordinate apid;           //PID values for the acceleration controller (m/s2, s)
     coordinate qpid;           //PID values for the attitude controller (rad, s)
     coordinate wpid[3];        //PID values for the angular rate controller (rad/s, s)
+    float hoverThrust;         //Normalized (0-1) collective thrust feedforward baseline, independent of apid's
+                                //Kp - previously flight_attitudeControl() reused apid.Kp*gravitation directly as
+                                //this feedforward, so apid's proportional gain and the hover baseline were the
+                                //same tunable value; at the default apid.Kp=1 that made the feedforward alone
+                                //(~9.81) dwarf the +-0.9 closed-loop PID output, saturating thrust to maximum
+                                //regardless of actual acceleration error. Appended at the end of this struct
+                                //(not inserted) so it doesn't shift any existing field's flat-array index -
+                                //those are relied on by the webserver's per-field SCAL calibration UI.
   } cal;
 };
 extern drone_state kafenv;     //Common state information about the drone

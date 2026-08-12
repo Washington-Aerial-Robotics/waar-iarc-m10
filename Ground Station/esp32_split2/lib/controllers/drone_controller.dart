@@ -579,29 +579,29 @@ class DroneController extends ChangeNotifier {
 
         final motor0 = _clampMotor(
           shapedThrottle +
-              shapedPitch +
               shapedRoll -
+              shapedPitch -
               shapedYaw,
         );
 
         final motor1 = _clampMotor(
           shapedThrottle +
-              shapedPitch -
               shapedRoll +
+              shapedPitch +
               shapedYaw,
         );
 
         final motor2 = _clampMotor(
           shapedThrottle -
+              shapedRoll -
               shapedPitch +
-              shapedRoll +
               shapedYaw,
         );
 
         final motor3 = _clampMotor(
           shapedThrottle -
+              shapedRoll +
               shapedPitch -
-              shapedRoll -
               shapedYaw,
         );
 

@@ -285,8 +285,13 @@ void flight_attitudeControl( const coordinate a, const float tk, const float dt 
   ITRVEC3( i ) sp[i] = pidStep( &kafenv.cal.qpid, &flight.attitudePID[i], 0, -sp[i], dt );
   ITRVEC3( i ) sp[i] = pidStep( &kafenv.cal.wpid[i], &flight.attiratePID[i], sp[i], kafenv.state.w.f[i], dt );
   // set motor inputs
-  float st = pidStep( &kafenv.cal.apid, &flight.acclratePID, ak + flight.rotMat[8] * a.z, flight.accelZ, dt ) 
-      + kafenv.cal.apid.gain * kafenv.cal.gravitation;
+  // hoverThrust is a dedicated, independently-tunable feedforward baseline (see kaf_drone.h) - it used to
+  // reuse apid.gain (== apid.Kp) directly here, which coupled the closed-loop proportional gain to the
+  // feedforward baseline: at apid.Kp=1, apid.gain*gravitation (~9.81) alone dwarfed the PID term (bounded
+  // to +-0.9), permanently saturating st to 1 (max thrust) regardless of actual acceleration error.
+  // BOUND()'d defensively so a bad value typed into the webserver field can't itself exceed valid thrust.
+  float st = pidStep( &kafenv.cal.apid, &flight.acclratePID, ak + flight.rotMat[8] * a.z, flight.accelZ, dt )
+      + BOUND( kafenv.cal.hoverThrust, 0.0F, 1.0F );
   st = st < 0 ? ( ( sp[0] < 0 ? -sp[0] : sp[0] ) + ( sp[1] < 0 ? 
       -sp[1] : sp[1] ) + ( sp[2] < 0 ? -sp[2] : sp[2] ) ) : ( st < 1 ? st : 1 );
   DPRINTF( "[F] Attitude Control Outputs: Thrust=%.3f, Pitch=%.3f, Roll=%.3f, Yaw=%.3f\n", st, sp[0], sp[1], sp[2] );
