@@ -56,6 +56,18 @@ struct commanding {
   unsigned long attitudeLimit;
 } commander;
 
+//Qualification state machine bookkeeping - internal to commander.cpp, not persisted. kafenv.info.qualState/
+//qualRevolutions are the externally-visible subset (telemetry only, see kaf_drone.h).
+static struct {
+  unsigned long orbitEntryMillis;       //millis() QUAL_ORBIT was entered - baseline for this drone's
+                                          //formationSlot phase-stagger delay before its first circle issue
+  unsigned long lastCircleReissueMillis; //0 = no circle issued yet this orbit
+  float accumulatedAngle;                //radians traversed since the first circle issue (post phase-delay)
+  unsigned long altitudeGoodSinceMillis; //0 = not currently within QUAL_ALTITUDE_TOLERANCE_M
+} qual;
+
+#define QUAL_TWO_PI 6.28318530718F
+
 struct startupcommand {
   unsigned char index;
   commanding::storage::startupcmd content;
@@ -181,12 +193,165 @@ void commander_setTrajectories( STDBYTE mode, const float args[4] ) {
       kafenv.cmd.setpoints[ 4] = u2a * ( -8.00000000000F );
       kafenv.cmd.setpoints[ 6] =   a                      + kafenv.state.x.x;
       kafenv.cmd.setpoints[ 8] = u3a * (  2.59807621135F );
-      kafenv.cmd.setpoints[ 0] = u2a * ( -7.79422863406F );
+      //setpoints[10]/[8] give Y (sin-based) its two legitimate odd-power terms (t^1, t^3) - Y needs no
+      //t^0/t^2/t^4 term (sin(0)=0, and sin's series has no even powers), so Y is already fully specified
+      //without this slot. X (cos-based, indices 2/4/6 above) is likewise already fully specified from its
+      //own even-power terms alone. This line used to write a fifth coefficient into setpoints[0] - which
+      //TRAJECTORY_MODE (flight.cpp) also uses as its elapsed-time accumulator - corrupting the very first
+      //tick's time base every time a circle trajectory was issued. Removed rather than relocated: nothing
+      //in either axis's Taylor expansion actually needs a fifth term at this order.
       kafenv.cmd.setpoints[10] = u1a * (  5.19615242271F );
       kafenv.cmd.setpoints[11] =                            kafenv.state.x.y;
       kafenv.cmd.setpoints[16] =                            kafenv.state.x.z;
       kafenv.cmd.setpoints[20] = commander.store.traj.s.circleW;
       kafenv.cmd.setpoints[21] = 0;
+      break;
+    }
+    default : { }
+  }
+}
+
+//Discrete, phone-issued transitions of the qualification state machine. Runs on the com_task core, same as
+//commander_step() (both driven from the same loop in firmware_full.ino), so no cross-core race between this
+//and commander_qualificationStep() below - the triggerLock/FLTSYNC pairs here are only for the flight_task
+//core's benefit, same convention as every other commander_setTrajectories() call in this file.
+void commander_qualificationCommand( STDBYTE cmd ) {
+  if( kafenv.info.autonomyMode != AUTONOMY_QUALIFICATION ) {
+    DPRINTF( "[H] Qualification Command Ignored: autonomyMode is not AUTONOMY_QUALIFICATION\n" );
+    return;
+  }
+  //LAND/ABORT have priority over every other qualification command - accepted from any in-progress state.
+  if( ( cmd == QUALCMD_LAND || cmd == QUALCMD_ABORT ) && kafenv.info.qualState != QUAL_LANDING && kafenv.info.qualState != QUAL_FINISH ) {
+    DPRINTF( "[H] Qualification: %s commanded from state %u\n", cmd == QUALCMD_ABORT ? "ABORT" : "LAND", kafenv.info.qualState );
+    kafenv.info.triggerLock = 1;
+    FLTSYNC;
+    kafenv.info.flightMode = CMD_NOMINAL_MODE | TRAJECTORY_MODE;
+    kafenv.info.actuation = true; //LAND must still be able to actuate even if commanded early from QUAL_BOOT
+    commander_setTrajectories( FLIGHTPATH_LAND, NULLPTR );
+    kafenv.info.triggerLock = 0;
+    kafenv.info.qualState = QUAL_LANDING;
+    return;
+  }
+  switch( cmd ) {
+    case QUALCMD_LAUNCH : {
+      if( kafenv.info.qualState != QUAL_BOOT ) {
+        DPRINTF( "[H] Qualification: LAUNCH rejected, qualState=%u (expected QUAL_BOOT)\n", kafenv.info.qualState );
+        return;
+      }
+      if( !estimation_positionValid() ) {
+        DPRINTF( "[H] Qualification: LAUNCH rejected, no valid position estimate\n" );
+        return;
+      }
+      DPRINTF( "[H] Qualification: LAUNCH, Slot=%u\n", kafenv.info.formationSlot );
+      kafenv.info.triggerLock = 1;
+      FLTSYNC;
+      kafenv.info.flightMode = CMD_NOMINAL_MODE | TRAJECTORY_MODE;
+      kafenv.info.actuation = true;
+      const float args[4] = { QUAL_HOVER_ALTITUDE_M, 0.9F, 0, 0 };
+      commander_setTrajectories( FLIGHTPATH_LAUNCH, args );
+      kafenv.info.triggerLock = 0;
+      kafenv.info.qualState = QUAL_CLIMB_TO_FORMATION;
+      qual.altitudeGoodSinceMillis = 0;
+      break;
+    }
+    case QUALCMD_BEGIN_ORBIT : {
+      if( kafenv.info.qualState != QUAL_HOVER_HOLD ) {
+        DPRINTF( "[H] Qualification: BEGIN_ORBIT rejected, qualState=%u (expected QUAL_HOVER_HOLD)\n", kafenv.info.qualState );
+        return;
+      }
+      DPRINTF( "[H] Qualification: BEGIN_ORBIT, Slot=%u\n", kafenv.info.formationSlot );
+      //Doesn't issue FLIGHTPATH_CIRCLE immediately - commander_qualificationStep() does, once this drone's
+      //formationSlot-based phase-stagger delay has elapsed (still holding via the existing POSLOCK from
+      //QUAL_HOVER_HOLD in the meantime). This spreads out when each drone crosses its neighbours' orbit
+      //paths instead of all four doing so at once.
+      kafenv.info.qualState = QUAL_ORBIT;
+      qual.orbitEntryMillis = millis();
+      qual.lastCircleReissueMillis = 0;
+      qual.accumulatedAngle = 0;
+      kafenv.info.qualRevolutions = 0;
+      break;
+    }
+    case QUALCMD_HOLD : {
+      if( kafenv.info.qualState != QUAL_ORBIT ) {
+        DPRINTF( "[H] Qualification: HOLD rejected, qualState=%u (expected QUAL_ORBIT)\n", kafenv.info.qualState );
+        return;
+      }
+      DPRINTF( "[H] Qualification: HOLD, Revolutions=%u\n", kafenv.info.qualRevolutions );
+      kafenv.info.triggerLock = 1;
+      FLTSYNC;
+      commander_setTrajectories( FLIGHTPATH_POSLOCK, NULLPTR );
+      kafenv.info.triggerLock = 0;
+      kafenv.info.qualState = QUAL_POST_ORBIT_HOLD;
+      break;
+    }
+    default : {
+      DPRINTF( "[H] Qualification: Unknown command %u\n", cmd );
+    }
+  }
+}
+
+//Time-driven qualification progression - called every commander_step() tick regardless of mode; no-ops
+//immediately if not in Qualification mode or if the current qualState has nothing time-driven to do
+//(QUAL_BOOT/QUAL_HOVER_HOLD/QUAL_POST_ORBIT_HOLD/QUAL_FINISH all only advance via
+//commander_qualificationCommand() above, or the position/setpoint-invalid failsafe in commander_step()).
+static void commander_qualificationStep( const unsigned long currentTime ) {
+  if( kafenv.info.autonomyMode != AUTONOMY_QUALIFICATION ) {
+    return;
+  }
+  switch( kafenv.info.qualState ) {
+    case QUAL_CLIMB_TO_FORMATION : {
+      const float altError = kafenv.state.x.z - QUAL_HOVER_ALTITUDE_M;
+      const bool withinTolerance = ( altError < QUAL_ALTITUDE_TOLERANCE_M ) && ( altError > -QUAL_ALTITUDE_TOLERANCE_M );
+      if( !withinTolerance ) {
+        qual.altitudeGoodSinceMillis = 0;
+      } else if( qual.altitudeGoodSinceMillis == 0 ) {
+        qual.altitudeGoodSinceMillis = currentTime;
+      } else if( currentTime - qual.altitudeGoodSinceMillis >= QUAL_ALTITUDE_DWELL_MS ) {
+        DPRINTF( "[H] Qualification: Formation altitude reached (%.2fm), holding\n", kafenv.state.x.z );
+        kafenv.info.triggerLock = 1;
+        FLTSYNC;
+        commander_setTrajectories( FLIGHTPATH_POSLOCK, NULLPTR );
+        kafenv.info.triggerLock = 0;
+        kafenv.info.qualState = QUAL_HOVER_HOLD;
+      }
+      break;
+    }
+    case QUAL_ORBIT : {
+      const unsigned long periodMs = ( unsigned long )( QUAL_TWO_PI / QUAL_ORBIT_ANGULAR_RATE * 1000.0F );
+      const unsigned long startDelayMs = ( ( unsigned long )kafenv.info.formationSlot ) * ( periodMs / 4UL );
+      if( currentTime - qual.orbitEntryMillis < startDelayMs ) {
+        break; //still within this drone's phase-stagger delay - keep holding (still POSLOCK'd from HOVER_HOLD)
+      }
+      if( qual.lastCircleReissueMillis == 0 || currentTime - qual.lastCircleReissueMillis >= QUAL_CIRCLE_REISSUE_MS ) {
+        if( qual.lastCircleReissueMillis != 0 ) {
+          qual.accumulatedAngle += QUAL_ORBIT_ANGULAR_RATE * ( ( currentTime - qual.lastCircleReissueMillis ) / 1000.0F );
+          kafenv.info.qualRevolutions = ( unsigned char )( qual.accumulatedAngle / QUAL_TWO_PI );
+        }
+        qual.lastCircleReissueMillis = currentTime;
+        const float args[4] = { QUAL_ORBIT_RADIUS_M, QUAL_ORBIT_ANGULAR_RATE, 0, 0 };
+        kafenv.info.triggerLock = 1;
+        FLTSYNC;
+        commander_setTrajectories( FLIGHTPATH_CIRCLE, args );
+        kafenv.info.triggerLock = 0;
+        DPRINTF( "[H] Qualification: Circle re-issued, Revolutions=%u\n", kafenv.info.qualRevolutions );
+      }
+      if( kafenv.info.qualRevolutions >= QUAL_ORBIT_REVOLUTIONS_TARGET ) {
+        DPRINTF( "[H] Qualification: Target revolutions reached, holding\n" );
+        kafenv.info.triggerLock = 1;
+        FLTSYNC;
+        commander_setTrajectories( FLIGHTPATH_POSLOCK, NULLPTR );
+        kafenv.info.triggerLock = 0;
+        kafenv.info.qualState = QUAL_POST_ORBIT_HOLD;
+      }
+      break;
+    }
+    case QUAL_LANDING : {
+      if( kafenv.state.x.z < 0.1F ) {
+        kafenv.info.actuation = false;
+        kafenv.info.flightMode = CMD_IDLE_MODE | ( DEFAULT_MODES_MASK & kafenv.info.flightMode );
+        kafenv.info.qualState = QUAL_FINISH;
+        DPRINTF( "[H] Qualification: Landed, FINISH\n" );
+      }
       break;
     }
     default : { }
@@ -292,6 +457,53 @@ peripheral commander_reset() {
     //COM_SET_FLIGHTMODE decision, gated on estimation_positionValid() - see communication.cpp.
     kafenv.info.triggerLock = 0;
   } );
+  //Phone-selected autonomy mode. Deliberately does nothing but set the field - no flightMode/actuation
+  //change here, matching "mode selection must never automatically arm or launch a drone". Rejected while
+  //already armed, so a mode swap can't happen mid-flight into a behavior the current flight state doesn't
+  //expect.
+  com_receiveMessage( COM_SET_AUTONOMYMODE, sizeof( STDBYTE ), []( void** response, const void* content, const unsigned short len ) {
+    return ( unsigned short )0;
+  }, []( const void* content, const packet_header header ) {
+    const STDBYTE mode = *( const STDBYTE* )content;
+    if( kafenv.info.actuation ) {
+      DPRINTF( "[H] Rejected Set Autonomy Mode: Already armed\n" );
+      return;
+    }
+    if( mode != AUTONOMY_MANUAL && mode != AUTONOMY_QUALIFICATION && mode != AUTONOMY_MINE_SEARCH ) {
+      DPRINTF( "[H] Rejected Set Autonomy Mode: Unknown mode %u\n", mode );
+      return;
+    }
+    DPRINTF( "[H] Set Autonomy Mode: %u\n", mode );
+    kafenv.info.autonomyMode = mode;
+    if( mode == AUTONOMY_QUALIFICATION ) {
+      kafenv.info.qualState = QUAL_BOOT;
+      kafenv.info.qualRevolutions = 0;
+    }
+  } );
+  //Phone-set formation slot (0-3) - which position along the hover line / orbit phase-stagger this drone
+  //uses. Rejected while armed, same reasoning as autonomy mode above.
+  com_receiveMessage( COM_SET_FORMATIONSLOT, sizeof( STDBYTE ), []( void** response, const void* content, const unsigned short len ) {
+    return ( unsigned short )0;
+  }, []( const void* content, const packet_header header ) {
+    const STDBYTE slot = *( const STDBYTE* )content;
+    if( kafenv.info.actuation ) {
+      DPRINTF( "[H] Rejected Set Formation Slot: Already armed\n" );
+      return;
+    }
+    if( slot > 3 ) {
+      DPRINTF( "[H] Rejected Set Formation Slot: %u out of range (0-3)\n", slot );
+      return;
+    }
+    DPRINTF( "[H] Set Formation Slot: %u\n", slot );
+    kafenv.info.formationSlot = slot;
+  } );
+  //High-level qualification command (QUALCMD_*) - the only way the phone actually moves a qualification
+  //flight forward; see commander_qualificationCommand() for the state machine itself.
+  com_receiveMessage( COM_SET_QUALCOMMAND, sizeof( STDBYTE ), []( void** response, const void* content, const unsigned short len ) {
+    return ( unsigned short )0;
+  }, []( const void* content, const packet_header header ) {
+    commander_qualificationCommand( *( const STDBYTE* )content );
+  } );
   return { "commander", sizeof( commander.store ), sizeof( commander ), &commander, [](){ commander_reset(); }, NULLPTR };
 }
 
@@ -351,11 +563,17 @@ void commander_step( const unsigned long currentTime ) {
   //check for lost Pi setpoint stream or an invalid position estimate while autonomously flying by
   //position - same emergency-descent response as the ground-station-disconnect/low-battery check above,
   //reused rather than duplicated. Only applies to the two flight modes that depend on kafenv.state.x/
-  //kafenv.cmd.setpoints being trustworthy; ACCEL_SETPOINT_MODE (attitude-only) doesn't need this.
+  //kafenv.cmd.setpoints being trustworthy; ACCEL_SETPOINT_MODE (attitude-only) doesn't need this. The
+  //setpointMillis staleness check only applies outside Qualification: Qualification's trajectories come
+  //from this ESP32's own FLIGHTPATH_* calls (commander_qualificationStep() below), never from
+  //COM_SET_TRAJSETPT, so setpointMillis never advances during a qualification flight and would otherwise
+  //make this fire immediately, every time, regardless of anything actually being wrong.
   if( commandMode == CMD_NOMINAL_MODE && kafenv.info.actuation ) {
     const STDBYTE flightModeBits = DEFAULT_MODES_MASK & kafenv.info.flightMode;
     if( flightModeBits == POS_SETPOINT_MODE || flightModeBits == TRAJECTORY_MODE ) {
-      const bool setpointStale = kafenv.cmd.setpointMillis == 0 || ( currentTime - kafenv.cmd.setpointMillis ) > SETPOINT_STALE_MS;
+      const bool checkSetpointStaleness = kafenv.info.autonomyMode != AUTONOMY_QUALIFICATION;
+      const bool setpointStale = checkSetpointStaleness &&
+          ( kafenv.cmd.setpointMillis == 0 || ( currentTime - kafenv.cmd.setpointMillis ) > SETPOINT_STALE_MS );
       if( !estimation_positionValid() || setpointStale ) {
         DPRINTF( "[H] Position/Setpoint Invalid During Autonomous Flight, Initiating Landing: "
             "PositionValid=%u, SetpointStale=%u, Time=%lu\n", estimation_positionValid(), setpointStale, currentTime );
@@ -364,6 +582,7 @@ void commander_step( const unsigned long currentTime ) {
         kafenv.info.flightMode = CMD_DESCENT_MODE | NULL_MODE;
         commander_setTrajectories( FLIGHTPATH_LAND, NULLPTR );
         kafenv.info.triggerLock = 0;
+        kafenv.info.qualState = QUAL_LANDING;
       }
     }
   }
@@ -377,5 +596,6 @@ void commander_step( const unsigned long currentTime ) {
       kafenv.cmd.setpoints[11] = kafenv.state.x.y;
     }
   }
+  commander_qualificationStep( currentTime );
   commander.lastTime = currentTime;
 }
