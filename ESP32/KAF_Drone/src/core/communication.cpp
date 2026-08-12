@@ -1,4 +1,5 @@
 #include "communication.h"
+#include "flight.h"
 #include "../auxilary/estimation.h"
 
 #if ALT_DEFINE
