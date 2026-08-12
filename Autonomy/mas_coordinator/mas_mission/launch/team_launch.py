@@ -26,7 +26,8 @@ DRONE_IDS = ["d1", "d2", "d3", "d4"]
 
 def drone_group(drone_id: str,
                 mission_duration, num_drones,
-                arena_width, arena_height) -> list:
+                arena_width, arena_height,
+                role_coordinator_id) -> list:
     """Return the three nodes for one drone (sync + task + mission)."""
 
     common_params = [
@@ -35,6 +36,7 @@ def drone_group(drone_id: str,
         {"num_drones":       num_drones},
         {"arena_width":      arena_width},
         {"arena_height":     arena_height},
+        {"role_coordinator_id": role_coordinator_id},
     ]
 
     sync_node = Node(
@@ -105,12 +107,15 @@ def generate_launch_description():
                               description="Arena width in metres (IARC: 300 ft = 91.44 m)"),
         DeclareLaunchArgument("arena_height",     default_value="24.38",
                               description="Arena height in metres (IARC: 80 ft = 24.38 m)"),
+        DeclareLaunchArgument("role_coordinator_id", default_value="d1",
+                              description="Only this drone announces team role auctions"),
     ]
 
     mission_duration = LaunchConfiguration("mission_duration")
     num_drones       = LaunchConfiguration("num_drones")
     arena_width      = LaunchConfiguration("arena_width")
     arena_height     = LaunchConfiguration("arena_height")
+    role_coordinator_id = LaunchConfiguration("role_coordinator_id")
 
     # ── Build nodes for each drone ────────────────────────────────────────────
     all_nodes = []
@@ -118,7 +123,8 @@ def generate_launch_description():
         all_nodes.extend(
             drone_group(drone_id,
                         mission_duration, num_drones,
-                        arena_width, arena_height)
+                        arena_width, arena_height,
+                        role_coordinator_id)
         )
 
     return LaunchDescription(args + all_nodes)

@@ -20,7 +20,7 @@ where context is a dict with keys like:
 """
 
 from __future__ import annotations
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional, Callable, List
 import time
 
@@ -56,6 +56,7 @@ class MissionContext:
     time_remaining:    float = 420.0
     mine_count:        int   = 0       # candidates seen
     confirmed_count:   int   = 0       # confirmed mines
+    resolved_count:    int   = 0       # confirmed + rejected mines
     all_drones_ready:  bool  = False
     path_verified:     bool  = False
     all_converged:     bool  = False
@@ -107,14 +108,14 @@ class StateMachine:
             # Time-based override: must start verifying before PATH_VERIFY window
             if tr <= T_PATH_VERIFY:
                 self._go("PATH_VERIFY")
-            elif ctx.mine_count > 0:
+            elif ctx.mine_count > ctx.resolved_count:
                 self._go("VERIFY_TAG")
 
         elif self.state == "VERIFY_TAG":
             if tr <= T_PATH_VERIFY:
                 self._go("PATH_VERIFY")
             # If all current candidates are resolved, go back to survey
-            elif ctx.mine_count > 0 and ctx.confirmed_count == ctx.mine_count:
+            elif ctx.mine_count > 0 and ctx.resolved_count == ctx.mine_count:
                 self._go("SURVEY")
 
         elif self.state == "PATH_VERIFY":
@@ -125,8 +126,6 @@ class StateMachine:
 
         elif self.state == "CONVERGE":
             if tr <= T_FINISH:
-                self._go("FINISH")
-            elif ctx.all_converged:
                 self._go("FINISH")
 
         # FINISH is terminal

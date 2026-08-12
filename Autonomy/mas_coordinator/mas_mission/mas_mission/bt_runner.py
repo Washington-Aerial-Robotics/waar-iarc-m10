@@ -10,9 +10,9 @@ BTNode             – abstract base; subclasses implement tick(node)
 PrioritySelector   – run children left-to-right, stop at first non-FAILURE
 
 Guard / Leaf nodes (each receives the MissionLogicNode instance as context):
-  CollisionGuardNode    – HOLD when any neighbour is within r_collision metres
-  GeofenceGuardNode     – RETURN_TO_BOUNDS when self leaves the arena rectangle
-  FailureMonitorNode    – FAILSAFE when own pose is stale (> POSE_STALE_S seconds)
+  CollisionGuardNode    – HOLD_POSITION near another drone
+  GeofenceGuardNode     – HOLD_POSITION outside the arena rectangle
+  FailureMonitorNode    – HOLD_POSITION when own pose is missing or stale
   TaskExecutorNode      – consume a pending task_cmd from the p2p task node
   ExplorationPolicyNode – dispatch per-state mission directive (mirrors old _tick())
   P2PSyncManagerNode    – passive leaf; always returns SUCCESS
@@ -88,20 +88,47 @@ class CollisionGuardNode(BTNode):
 
     Compares this drone's own position against every known neighbour pose.
     If any neighbour is closer than R_COLLISION metres:
-      • publishes cmd=HOLD to the explorer
+      • publishes cmd=HOLD_POSITION to the explorer
       • returns SUCCESS  (selector stops; lower nodes are skipped)
     Returns FAILURE when no collision risk exists.
     """
 
     def tick(self, node: Any) -> BTStatus:
+        if node.own_pose_last_seen is None:
+            return BTStatus.FAILURE
+
+        now = time.monotonic()
+        pose_timeout_s = getattr(node, "pose_timeout_s", POSE_STALE_S)
+        if now - node.own_pose_last_seen > pose_timeout_s:
+            # FailureMonitorNode owns the diagnostic and HOLD for stale own pose.
+            return BTStatus.FAILURE
+
         ox, oy = node.own_x, node.own_y
         for did, (nx, ny) in node.team_poses.items():
+            last_seen = node.team_last_seen.get(did)
+            age = math.inf if last_seen is None else now - last_seen
+            if age > pose_timeout_s:
+                age_text = "unknown" if last_seen is None else f"{age:.1f}s"
+                node.get_logger().warn(
+                    f"[{node.drone_id}] Neighbour {did} pose stale "
+                    f"({age_text}; limit {pose_timeout_s:.1f}s) - issuing HOLD")
+                node._publish_cmd(json.dumps({
+                    "cmd": "HOLD_POSITION",
+                    "reason": "neighbor_pose_stale",
+                    "neighbor_id": did,
+                }))
+                return BTStatus.SUCCESS
+
             dist = math.hypot(nx - ox, ny - oy)
             if dist < R_COLLISION:
                 node.get_logger().warn(
                     f"[{node.drone_id}] COLLISION risk with {did} "
                     f"dist={dist:.2f}m — issuing HOLD")
-                node._publish_cmd(json.dumps({"cmd": "HOLD"}))
+                node._publish_cmd(json.dumps({
+                    "cmd": "HOLD_POSITION",
+                    "reason": "collision_risk",
+                    "neighbor_id": did,
+                }))
                 return BTStatus.SUCCESS
         return BTStatus.FAILURE
 
@@ -112,19 +139,22 @@ class GeofenceGuardNode(BTNode):
 
     Checks whether this drone's position lies within the arena rectangle
     [0, arena_w] × [0, arena_h].  If outside:
-      • publishes cmd=RETURN_TO_BOUNDS to the explorer
+      • publishes cmd=HOLD_POSITION to the explorer
       • returns SUCCESS
     Returns FAILURE when inside the fence.
     """
 
     def tick(self, node: Any) -> BTStatus:
+        if node.own_pose_last_seen is None:
+            return BTStatus.FAILURE
         x, y = node.own_x, node.own_y
         if x < 0.0 or x > node.arena_w or y < 0.0 or y > node.arena_h:
             node.get_logger().warn(
                 f"[{node.drone_id}] Outside geofence "
                 f"pos=({x:.1f},{y:.1f}) arena=({node.arena_w},{node.arena_h})"
-                f" — issuing RETURN_TO_BOUNDS")
-            node._publish_cmd(json.dumps({"cmd": "RETURN_TO_BOUNDS"}))
+                f" — issuing HOLD_POSITION")
+            node._publish_cmd(json.dumps({
+                "cmd": "HOLD_POSITION", "reason": "outside_geofence"}))
             return BTStatus.SUCCESS
         return BTStatus.FAILURE
 
@@ -135,18 +165,23 @@ class FailureMonitorNode(BTNode):
 
     If the last self-pose beacon is older than POSE_STALE_S seconds the
     position sensor may have failed:
-      • publishes cmd=FAILSAFE to the explorer
+      • publishes cmd=HOLD_POSITION to the explorer
       • returns SUCCESS
     Returns FAILURE when the pose is fresh.
     """
 
     def tick(self, node: Any) -> BTStatus:
+        if node.own_pose_last_seen is None:
+            node._publish_cmd(json.dumps({
+                "cmd": "HOLD_POSITION", "reason": "pose_unavailable"}))
+            return BTStatus.SUCCESS
         age = time.monotonic() - node.own_pose_last_seen
         if age > POSE_STALE_S:
             node.get_logger().error(
                 f"[{node.drone_id}] Own pose stale ({age:.1f}s > {POSE_STALE_S}s)"
-                f" — issuing FAILSAFE")
-            node._publish_cmd(json.dumps({"cmd": "FAILSAFE"}))
+                f" — issuing HOLD_POSITION")
+            node._publish_cmd(json.dumps({
+                "cmd": "HOLD_POSITION", "reason": "pose_stale"}))
             return BTStatus.SUCCESS
         return BTStatus.FAILURE
 
