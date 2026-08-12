@@ -94,6 +94,18 @@ struct drone_state {
     bool actuation;            //Configuration for if motor actuation is enabled or not
     unsigned int version;      //Flight software version
     float battery;             //Percentage amount of battery left
+    STDBYTE autonomyMode;      //AUTONOMY_MANUAL/AUTONOMY_QUALIFICATION/AUTONOMY_MINE_SEARCH (commander.h) -
+                                //selects which autonomy behavior commander_step() runs; orthogonal to
+                                //flightMode, which is about the low-level control cascade, not who's
+                                //deciding the setpoints. Mode selection alone never arms/moves anything -
+                                //see commander.h's QUALCMD_* for the separate, explicit command that does.
+    STDBYTE formationSlot;     //0-3, phone-set (COM_SET_FORMATIONSLOT) before a Qualification launch -
+                                //selects this drone's position along the hover line and its orbit phase
+                                //stagger; see commander.cpp's qualification state machine.
+    STDBYTE qualState;         //QUAL_* (commander.h) - current qualification state machine state, exposed
+                                //here (piggybacking the existing COM_REQUEST_INFO telemetry) purely for
+                                //ground-station display, not read by any control logic.
+    unsigned char qualRevolutions; //Completed orbit revolutions this Qualification run - telemetry only.
   } info;
   struct stateestimate {       //STATE ESTIMATION
     coordinate x;              //Position in m in the world frame

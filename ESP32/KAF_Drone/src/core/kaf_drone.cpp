@@ -23,6 +23,10 @@ peripheral kaf_reset() {
   //this also resets kafenv.cal's PID gains, which must be manually restored via pid_calibrate.py afterward.
   kafenv.info.version = 0x20260813;
   kafenv.info.battery = 100.0F;
+  kafenv.info.autonomyMode = 0; //AUTONOMY_MANUAL - never boots directly into an autonomy mode
+  kafenv.info.formationSlot = 0;
+  kafenv.info.qualState = 0; //QUAL_BOOT
+  kafenv.info.qualRevolutions = 0;
   FPFILL0( i, kafenv.state.x.f );
   FPFILL0( i, kafenv.state.v.f );
   FPFILL0( i, kafenv.state.q.f );

@@ -290,6 +290,10 @@ class DroneTelemetry {
     this.batteryPercent,
     this.deviceId,
     this.firmwareVersion,
+    this.autonomyMode,
+    this.formationSlot,
+    this.qualState,
+    this.qualRevolutions,
   });
 
   final Coordinate3? position;
@@ -306,6 +310,17 @@ class DroneTelemetry {
   final int? deviceId;
   final int? firmwareVersion;
 
+  // AUTONOMY_MANUAL/QUALIFICATION/MINE_SEARCH (see commander.h) - which
+  // autonomy behavior the drone is running, phone-selected via
+  // COM_SET_AUTONOMYMODE.
+  final int? autonomyMode;
+  // 0-3, phone-set via COM_SET_FORMATIONSLOT before a Qualification launch.
+  final int? formationSlot;
+  // QUAL_BOOT..QUAL_FINISH (see commander.h) - only meaningful when
+  // autonomyMode == QUALIFICATION.
+  final int? qualState;
+  final int? qualRevolutions;
+
   /// Returns a copy with any non-null fields from [update] overlaid on top
   /// of this telemetry, so partial replies (e.g. position-only) don't wipe
   /// out fields reported by a different reply type.
@@ -319,6 +334,10 @@ class DroneTelemetry {
       batteryPercent: update.batteryPercent ?? batteryPercent,
       deviceId: update.deviceId ?? deviceId,
       firmwareVersion: update.firmwareVersion ?? firmwareVersion,
+      autonomyMode: update.autonomyMode ?? autonomyMode,
+      formationSlot: update.formationSlot ?? formationSlot,
+      qualState: update.qualState ?? qualState,
+      qualRevolutions: update.qualRevolutions ?? qualRevolutions,
     );
   }
 
@@ -351,9 +370,13 @@ class DroneTelemetry {
   }
 
   /// Decodes a COM_REPLY_INFO payload ("droneinfo"): identification,
-  /// firmware version, and battery. Wire layout:
-  /// [deviceID,flightMode,triggerLock,actuation: uint8 x4]
-  /// [version: uint32][battery: float32] = 12 bytes.
+  /// firmware version, battery, and autonomy/qualification status. Wire
+  /// layout: [deviceID,flightMode,triggerLock,actuation: uint8 x4]
+  /// [version: uint32][battery: float32]
+  /// [autonomyMode,formationSlot,qualState,qualRevolutions: uint8 x4]
+  /// = 16 bytes. The last 4 bytes are read defensively (payload.length
+  /// check) so this keeps working against older firmware that only sends
+  /// the first 12.
   static DroneTelemetry? fromInfoReply(Uint8List payload) {
     if (payload.length < 12) return null;
 
@@ -363,6 +386,10 @@ class DroneTelemetry {
       flightMode: payload[1],
       firmwareVersion: bd.getUint32(4, Endian.little),
       batteryPercent: bd.getFloat32(8, Endian.little),
+      autonomyMode: payload.length >= 13 ? payload[12] : null,
+      formationSlot: payload.length >= 14 ? payload[13] : null,
+      qualState: payload.length >= 15 ? payload[14] : null,
+      qualRevolutions: payload.length >= 16 ? payload[15] : null,
     );
   }
 

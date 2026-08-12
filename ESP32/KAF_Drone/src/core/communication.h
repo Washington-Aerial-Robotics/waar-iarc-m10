@@ -60,6 +60,10 @@
 #define COM_REPLY_WIFI       (       0 | 33 )//wifi
 #define COM_SET_WIFI         ( COM_CMD | 34 )//wifi
 #define COM_SET_KILL         ( COM_CMD | 35 )//esp32
+#define COM_SET_AUTONOMYMODE ( COM_CMD | 36 )//commander - phone-selected MANUAL/QUALIFICATION/MINE_SEARCH,
+                                              //never itself arms/moves anything (see commander.h)
+#define COM_SET_FORMATIONSLOT ( COM_CMD | 37 )//commander - phone-set 0-3, before a Qualification launch
+#define COM_SET_QUALCOMMAND  ( COM_CMD | 38 )//commander - QUALCMD_LAUNCH/BEGIN_ORBIT/HOLD/LAND/ABORT
 //50-59 communication method specific messages
 #define COM_RANGING_1        ( COM_CMD | 50 )//dw3000
 #define COM_RANGING_2        ( COM_CMD | 51 )//dw3000
