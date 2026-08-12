@@ -313,6 +313,11 @@ void flight_positionControl( const imu* sensor, const float position[4] ) {
   float setpoint[3] = { 0, 0, 0 };
   DPRINTF( "[F] Position Setpoint: X=[ %.3f, %.3f, %.3f ]\n", position[0], position[1], position[2] );
   ITRVEC3( i ) setpoint[i] = pidStep( &kafenv.cal.xpid, &flight.positionPID[i], position[i], kafenv.state.x.f[i], dt );
+  //Velocity feedforward (e.g. from a Pi-driven orbit setpoint) added on top of xpid's position-error-derived
+  //velocity target, before vpid converts the combined target into an attitude/acceleration command - lets a
+  //moving setpoint keep up with its own motion instead of always tracking one dt behind on error alone.
+  //Zero for a stationary hold (COM_SET_FLIGHTMODE/commander_setTrajectories both zero this field).
+  ITRVEC3( i ) setpoint[i] += kafenv.cmd.setpointVelocity.f[i];
   ITRVEC3( i ) setpoint[i] = pidStep( &kafenv.cal.vpid, &flight.velocityPID[i], setpoint[i], kafenv.state.v.f[i], dt );
   flight_attitudeControl( { setpoint[0], setpoint[1], setpoint[2] }, position[3], dt );
 }

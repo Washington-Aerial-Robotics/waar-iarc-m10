@@ -51,6 +51,8 @@
 #define COM_SET_STORAGE      ( COM_CMD | 26 )//commander
 #define COM_SET_TRAJECTORY   ( COM_CMD | 27 )//commander
 #define COM_SET_TRAJCONFIG   ( COM_CMD | 28 )//commander
+#define COM_SET_TRAJSETPT    ( COM_CMD | 29 )//commander - generic Pi-to-ESP32 position/velocity/yaw setpoint,
+                                              //used by both Qualification and Mine Search autonomy modes
 #define COM_SET_PIDTUNING    ( COM_CMD | 30 )//pid_tuner
 #define COM_SET_SIM_VARS     ( COM_CMD | 31 )//pid_tuner
 #define COM_SET_RESP_VARS    ( COM_CMD | 32 )//pid_tuner

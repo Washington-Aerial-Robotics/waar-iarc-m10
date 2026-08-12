@@ -3,6 +3,7 @@
 #include "../core/flight.h"
 #include "commander.h"
 #include "common_data.h"
+#include "estimation.h"
 
 #if ALT_DEFINE
 #define NAN 0.0F
@@ -60,9 +61,31 @@ struct startupcommand {
   commanding::storage::startupcmd content;
 };
 
+//COM_SET_TRAJSETPT payload - one generic Pi-to-ESP32 setpoint shape reused by Qualification and Mine
+//Search alike. `sequence` must strictly increase for a setpoint to be accepted (see the handler in
+//commander_reset()); the ESP32 timestamps its own receipt (kafenv.cmd.setpointMillis) rather than trusting
+//a Pi-supplied clock, since only locally-measured arrival time is meaningful for staleness detection.
+struct trajsetpoint {
+  unsigned long sequence;
+  float x, y, z, yaw;
+  float vx, vy, vz;
+};
+
 void commander_setTrajectories( STDBYTE mode, const float args[4] ) {
   kafenv.info.flightMode = ( kafenv.info.flightMode & ~DEFAULT_MODES_MASK ) | TRAJECTORY_MODE;
   kafenv.info.actuation = true;
+  //Previously nothing here cleared kafenv.cmd.setpoints before writing the new mode's fields, so any
+  //per-axis polynomial coefficient NOT touched by the new mode (e.g. LAUNCH/LAND/POSLOCK never set indices
+  //2-5, 7-10, 12-15, 17-20 at all) kept whatever a PRIOR trajectory call had left there - a LAUNCH issued
+  //right after a CIRCLE would fly with the circle's stale X/Y polynomial terms still active. Index 0 is
+  //deliberately left alone here (reset to 0 for every mode below, individual cases may still override it -
+  //see FLIGHTPATH_CIRCLE, which uses it for a coefficient rather than TRAJECTORY_MODE's elapsed-time role;
+  //that specific conflict is flagged separately and not resolved by this clear).
+  for( unsigned char i = 2; i < FPARLEN( kafenv.cmd.setpoints ); i++ ) {
+    kafenv.cmd.setpoints[i] = 0;
+  }
+  kafenv.cmd.setpoints[0] = 0;
+  kafenv.cmd.setpointVelocity = { 0, 0, 0 };
   switch( mode ) {
     case FLIGHTPATH_LAUNCH : {
       if( args != NULLPTR ) {
@@ -235,6 +258,40 @@ peripheral commander_reset() {
       }
     }
   } );
+  //Generic Pi-to-ESP32 position/velocity/yaw setpoint, shared by both Qualification and Mine Search - the
+  //Pi decides WHERE the drone should be (formation slot, orbit point, survey waypoint); this ESP32 only
+  //tracks it via the existing POS_SETPOINT_MODE cascade, validates freshness/sequence, and never itself
+  //decides where to go. Payload is fixed-size ( trajsetpoint below), not the raw variable-length float
+  //array COM_SET_SETPT uses, so it can carry a sequence number and be rejected out-of-order.
+  com_receiveMessage( COM_SET_TRAJSETPT, sizeof( trajsetpoint ), []( void** response, const void* content, const unsigned short len ) {
+    return ( unsigned short )0;
+  }, []( const void* content, const packet_header header ) {
+    const trajsetpoint* setpt = ( const trajsetpoint* )content;
+    if( setpt->sequence <= kafenv.cmd.setpointSeq && kafenv.cmd.setpointMillis != 0 ) {
+      DPRINTF( "[H] Rejected Trajectory Setpoint: Sequence=%lu <= Last=%lu\n", setpt->sequence, kafenv.cmd.setpointSeq );
+      return;
+    }
+    if( !isfinite( setpt->x ) || !isfinite( setpt->y ) || !isfinite( setpt->z ) || !isfinite( setpt->yaw ) ||
+        !isfinite( setpt->vx ) || !isfinite( setpt->vy ) || !isfinite( setpt->vz ) ) {
+      DPRINTF( "[H] Rejected Trajectory Setpoint: Non-finite value, Sequence=%lu\n", setpt->sequence );
+      return;
+    }
+    DPRINTF( "[H] Accepted Trajectory Setpoint: Sequence=%lu, X=[ %.3f, %.3f, %.3f ], Yaw=%.3f, V=[ %.3f, %.3f, %.3f ]\n",
+        setpt->sequence, setpt->x, setpt->y, setpt->z, setpt->yaw, setpt->vx, setpt->vy, setpt->vz );
+    kafenv.info.triggerLock = 1;
+    FLTSYNC;
+    kafenv.cmd.setpoints[0] = setpt->x;
+    kafenv.cmd.setpoints[1] = setpt->y;
+    kafenv.cmd.setpoints[2] = setpt->z;
+    kafenv.cmd.setpoints[3] = setpt->yaw;
+    kafenv.cmd.setpointVelocity = { setpt->vx, setpt->vy, setpt->vz };
+    kafenv.cmd.setpointSeq = setpt->sequence;
+    kafenv.cmd.setpointMillis = millis();
+    //Deliberately does NOT change kafenv.info.flightMode - receiving a setpoint updates the TARGET only.
+    //Entering POS_SETPOINT_MODE (i.e. actually arming/moving toward it) is a separate, explicit
+    //COM_SET_FLIGHTMODE decision, gated on estimation_positionValid() - see communication.cpp.
+    kafenv.info.triggerLock = 0;
+  } );
   return { "commander", sizeof( commander.store ), sizeof( commander ), &commander, [](){ commander_reset(); }, NULLPTR };
 }
 
@@ -289,6 +346,25 @@ void commander_step( const unsigned long currentTime ) {
       kafenv.info.flightMode = CMD_DESCENT_MODE | NULL_MODE;
       commander_setTrajectories( FLIGHTPATH_LAND, NULLPTR );
       kafenv.info.triggerLock = 0;
+    }
+  }
+  //check for lost Pi setpoint stream or an invalid position estimate while autonomously flying by
+  //position - same emergency-descent response as the ground-station-disconnect/low-battery check above,
+  //reused rather than duplicated. Only applies to the two flight modes that depend on kafenv.state.x/
+  //kafenv.cmd.setpoints being trustworthy; ACCEL_SETPOINT_MODE (attitude-only) doesn't need this.
+  if( commandMode == CMD_NOMINAL_MODE && kafenv.info.actuation ) {
+    const STDBYTE flightModeBits = DEFAULT_MODES_MASK & kafenv.info.flightMode;
+    if( flightModeBits == POS_SETPOINT_MODE || flightModeBits == TRAJECTORY_MODE ) {
+      const bool setpointStale = kafenv.cmd.setpointMillis == 0 || ( currentTime - kafenv.cmd.setpointMillis ) > SETPOINT_STALE_MS;
+      if( !estimation_positionValid() || setpointStale ) {
+        DPRINTF( "[H] Position/Setpoint Invalid During Autonomous Flight, Initiating Landing: "
+            "PositionValid=%u, SetpointStale=%u, Time=%lu\n", estimation_positionValid(), setpointStale, currentTime );
+        kafenv.info.triggerLock = 1;
+        FLTSYNC;
+        kafenv.info.flightMode = CMD_DESCENT_MODE | NULL_MODE;
+        commander_setTrajectories( FLIGHTPATH_LAND, NULLPTR );
+        kafenv.info.triggerLock = 0;
+      }
     }
   }
   //check for controlled emergency descent

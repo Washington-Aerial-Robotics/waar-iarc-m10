@@ -104,6 +104,16 @@ struct drone_state {
   struct {                     //TRAJECTORY COMMANDS
     float setpoints[22];       //Setpoint float point data representing coordinates, values, or trajectories
     float motors[4];           //Variable to throttle the target PWM voltage as an unitless scalar 0<=1
+    coordinate setpointVelocity; //Feedforward velocity (m/s, world frame) accompanying a COM_SET_TRAJSETPT
+                                //position setpoint - added to flight_positionControl()'s xpid output before
+                                //vpid, so a moving target (e.g. an orbit) doesn't rely on position-error
+                                //alone to keep up with its own motion. Zero for a stationary hold setpoint.
+    unsigned long setpointSeq;   //Monotonic sequence number of the last accepted COM_SET_TRAJSETPT - a new
+                                //setpoint is only accepted if its sequence is greater than this, guarding
+                                //against a stale/duplicate/replayed packet overwriting a newer setpoint.
+    unsigned long setpointMillis; //millis() this device received (not the sender's clock) the last accepted
+                                //COM_SET_TRAJSETPT - the single source of truth for setpoint staleness/
+                                //communication-loss detection; see commander_step()'s failsafe check.
   } cmd;
   struct calibrations {        //CALIBRATION DATA
     float anglealpha;          //Alpha filter value for merging predicted attitudes (rad/rad)

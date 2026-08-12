@@ -1,4 +1,5 @@
 #include "communication.h"
+#include "../auxilary/estimation.h"
 
 #if ALT_DEFINE
 #define NAN 0.0F
@@ -624,6 +625,16 @@ void com_step( const radio* radio ) {
           break;
         }
         case COM_SET_FLIGHTMODE : {
+          const STDBYTE requestedModeBits = DEFAULT_MODES_MASK & content->flightmode.h.flightMode;
+          //Refuse to enter (or leave the drone in) a position-dependent flight mode without a validated
+          //position estimate - arming into POS_SETPOINT_MODE/TRAJECTORY_MODE on an invalid/never-acquired
+          //GPS fix would otherwise let the drone try to "hold position" against a fabricated zero, which
+          //is exactly the silent-bad-coordinates failure this guard exists to prevent.
+          if( ( requestedModeBits == POS_SETPOINT_MODE || requestedModeBits == TRAJECTORY_MODE ) && !estimation_positionValid() ) {
+            DPRINTF( "[C] Rejected Flight Mode Change: Requested=%02x requires a valid position estimate\n",
+                content->flightmode.h.flightMode );
+            break;
+          }
           kafenv.info.triggerLock = 1;
           FLTSYNC;
           kafenv.info.flightMode = content->flightmode.h.flightMode;
