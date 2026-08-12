@@ -23,9 +23,13 @@ static struct {
 } escs;
 
 void peripheral_escsLoop() {
+  //DEBUG logging throttled to ~1/s - see periph_freertos.cpp for why
+  static unsigned long lastEscPrint = 0;
+  const bool escPrintDue = millis() - lastEscPrint > 1000;
+  if( escPrintDue ) lastEscPrint = millis();
   if( kafenv.info.actuation ) {
     if( escs.motorEnabled ) {
-      DPRINTF( "[P] Run ESCs: Status=ACTIVE\n" );
+      if( escPrintDue ) DPRINTF( "[P] Run ESCs: Status=ACTIVE\n" );
       for( int i = 0; i < FPARLEN( kafenv.cmd.motors ); i++ ) {
         float target = kafenv.cmd.motors[i] * 100.0F;
         BOUND( target, 0.0F, 100.0F );
@@ -37,7 +41,7 @@ void peripheral_escsLoop() {
         escs.motors[i]->sendThrottlePercent( value );
       }
     } else {
-      DPRINTF( "[P] Run ESCs: Status=ARMING\n" );
+      if( escPrintDue ) DPRINTF( "[P] Run ESCs: Status=ARMING\n" );
       for( int i = 0; i < FPARLEN( kafenv.cmd.motors ); i++ ) {
         escs.motors[i]->sendThrottlePercent( 0.0F );
       }
@@ -45,9 +49,9 @@ void peripheral_escsLoop() {
         escs.motorEnabled = true;
       }
     }
-    DPRINTF( "[P] ESC Setpoint: Motors=[ %.1f, %.1f, %.1f, %.1f ]\n", escs.setpoints[0], escs.setpoints[1], escs.setpoints[2], escs.setpoints[3] );
+    if( escPrintDue ) DPRINTF( "[P] ESC Setpoint: Motors=[ %.1f, %.1f, %.1f, %.1f ]\n", escs.setpoints[0], escs.setpoints[1], escs.setpoints[2], escs.setpoints[3] );
   } else {
-    DPRINTF( "[P] Run ESCs: Status=DISABLED\n" );
+    if( escPrintDue ) DPRINTF( "[P] Run ESCs: Status=DISABLED\n" );
     escs.motorEnabled = false;
     escs.armFrames = 0;
     for( int i = 0; i < FPARLEN( kafenv.cmd.motors ); i++ ) {

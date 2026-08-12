@@ -218,7 +218,7 @@ async function load_flight(){
     coords=[0,1,1,1,0,-1,-1,-1,0,-1,-1,-1,0, 1, 1, 1,0,0,
             0,1,1,1,0, 1, 1, 1,0,-1,-1,-1,0,-1,-1,-1,0,0,
             0,0,1,0,0, 0, 1, 0,0, 0, 1, 0,0, 0, 1, 0,0,1];
-    coordidcs=[38,42,46,50];
+    coordidcs=[42,46,38,50];
     attitude=document.getElementById("attitude");
     attitude.width=attitude.clientWidth;
     attitude.height=attitude.clientHeight;

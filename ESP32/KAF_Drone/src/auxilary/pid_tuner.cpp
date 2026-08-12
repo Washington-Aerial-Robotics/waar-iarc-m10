@@ -535,7 +535,12 @@ void pidtuner_step( void* imuData ) {
       break;
     }
     default : {
-      DPRINTF( "[T] PID Tuning Inactive\n" );
+      //DEBUG logging throttled to ~1/s - see periph_freertos.cpp for why
+      static unsigned long lastInactivePrint = 0;
+      if( millis() - lastInactivePrint > 1000 ) {
+        lastInactivePrint = millis();
+        DPRINTF( "[T] PID Tuning Inactive\n" );
+      }
     }
   }
 }

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 
@@ -24,7 +25,9 @@ class DroneController extends ChangeNotifier {
   final DronePacketBuilder _packetBuilder;
 
   static const int appDeviceId = 0x47; // 'G'
-  static const int defaultDroneDeviceId = 0x41; // 'A'
+  // firmware_full.ino identifies this airframe as 'U'. Packets addressed to
+  // another device ID are intentionally ignored by the firmware.
+  static const int defaultDroneDeviceId = 0x55; // 'U'
 
   int _targetDroneId = defaultDroneDeviceId;
 
@@ -39,6 +42,9 @@ class DroneController extends ChangeNotifier {
 
   final List<String> log = [];
   StreamSubscription<String>? _sub;
+  StreamSubscription<Uint8List>? _packetSub;
+
+  DroneTelemetry telemetry = const DroneTelemetry();
 
   double roll = 0.0;
   double pitch = 0.0;
@@ -131,6 +137,9 @@ class DroneController extends ChangeNotifier {
       await _sub?.cancel();
       _sub = client.lines.listen(_pushLog);
 
+      await _packetSub?.cancel();
+      _packetSub = client.packets.listen(_handleIncomingPacket);
+
       // Do not begin sending motor packets immediately after connection.
       notifyListeners();
     } catch (error) {
@@ -151,10 +160,41 @@ class DroneController extends ChangeNotifier {
     await _sub?.cancel();
     _sub = null;
 
+    await _packetSub?.cancel();
+    _packetSub = null;
+
     client.disconnect();
 
     status = LinkStatus.disconnected;
     notifyListeners();
+  }
+
+  void _handleIncomingPacket(Uint8List bytes) {
+    final packet = DronePacketBuilder.tryParse(bytes);
+    if (packet == null) {
+      return;
+    }
+
+    DroneTelemetry? update;
+
+    switch (packet.messageType) {
+      case DroneComms.comReplyPos:
+        update = DroneTelemetry.fromStateReply(packet.payload);
+        break;
+      case DroneComms.comReplyStateEst:
+        update = DroneTelemetry.fromStateEstimateReply(packet.payload);
+        break;
+      case DroneComms.comReplyInfo:
+        update = DroneTelemetry.fromInfoReply(packet.payload);
+        break;
+    }
+
+    if (update == null) {
+      return;
+    }
+
+    telemetry = telemetry.mergedWith(update);
+    _pushLog('Telemetry: $telemetry');
   }
 
   void setSticks({
@@ -185,7 +225,16 @@ class DroneController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void arm() {
+  // Firmware's com_step() (communication.cpp) reads all currently-available
+  // TCP bytes into one buffer and processes only the first packet in it, with
+  // no leftover-byte carryover - two sendBytes() calls with no gap can land
+  // in the same read and silently drop the second packet. This delay is a
+  // stopgap to keep the two sends in separate TCP reads; the real fix is
+  // proper per-packet framing in wifiReceiving()/com_step() on the firmware
+  // side.
+  static const _packetGap = Duration(milliseconds: 60);
+
+  Future<void> arm() async {
     if (!client.isConnected) {
       _pushLog('Cannot ARM: not connected');
       return;
@@ -196,14 +245,34 @@ class DroneController extends ChangeNotifier {
       return;
     }
 
+    // Switch the firmware out of NULL_MODE (its boot default, which zeroes
+    // cmd.motors and forces actuation off every flight-loop tick) into
+    // ACTUATION_MODE, the one mode flight_step() leaves cmd.motors alone in -
+    // so the COM_SET_MOTORS stream from the control loop below actually
+    // reaches the ESCs. CMD_NULL_MODE keeps the commander state machine
+    // (storage replay, failsafes) out of the way for a manual bench test.
+    final modePacket = _packetBuilder.flightMode(
+      cmdMode: DroneComms.cmdModeNull,
+      mode: DroneComms.flightModeActuation,
+      toId: _targetDroneId,
+    );
+    client.sendBytes(modePacket);
+    await Future.delayed(_packetGap);
+
+    final actuationPacket = _packetBuilder.actuation(
+      armed: true,
+      toId: _targetDroneId,
+    );
+    client.sendBytes(actuationPacket);
+
     if (_txTimer == null) {
       _startControlLoop();
     }
 
-    _pushLog('ARM: control loop started');
+    _pushLog('ARM: sent flight mode + actuation, control loop started');
   }
 
-  void disarm() {
+  Future<void> disarm() async {
     _voiceResetTimer?.cancel();
     _voiceResetTimer = null;
 
@@ -214,7 +283,20 @@ class DroneController extends ChangeNotifier {
 
     _stopControlLoop();
 
-    _pushLog('DISARM: controls zeroed');
+    if (client.isConnected) {
+      client.sendBytes(_packetBuilder.actuation(armed: false, toId: _targetDroneId));
+      await Future.delayed(_packetGap);
+      // Also return to NULL_MODE so flight_step() actively re-zeroes
+      // cmd.motors every tick as a second line of defense, not just whatever
+      // relied on the actuation flag alone.
+      client.sendBytes(_packetBuilder.flightMode(
+        cmdMode: DroneComms.cmdModeNull,
+        mode: DroneComms.flightModeNull,
+        toId: _targetDroneId,
+      ));
+    }
+
+    _pushLog('DISARM: controls zeroed, actuation off');
     notifyListeners();
   }
 
@@ -497,29 +579,29 @@ class DroneController extends ChangeNotifier {
 
         final motor0 = _clampMotor(
           shapedThrottle +
-              shapedPitch +
               shapedRoll -
+              shapedPitch -
               shapedYaw,
         );
 
         final motor1 = _clampMotor(
           shapedThrottle +
-              shapedPitch -
               shapedRoll +
+              shapedPitch +
               shapedYaw,
         );
 
         final motor2 = _clampMotor(
           shapedThrottle -
+              shapedRoll -
               shapedPitch +
-              shapedRoll +
               shapedYaw,
         );
 
         final motor3 = _clampMotor(
           shapedThrottle -
+              shapedRoll +
               shapedPitch -
-              shapedRoll -
               shapedYaw,
         );
 
@@ -558,6 +640,7 @@ class DroneController extends ChangeNotifier {
     _voiceResetTimer?.cancel();
     _stopControlLoop();
     _sub?.cancel();
+    _packetSub?.cancel();
 
     // TcpClient is owned and disposed by Provider in main.dart.
     super.dispose();

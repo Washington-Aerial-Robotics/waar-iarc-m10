@@ -59,11 +59,17 @@ static unsigned char i2cSendByte( unsigned char address, unsigned char reg, unsi
 }
 
 void peripheral_mpu9250Loop() {
+  static unsigned long lastImuPrint = 0;
+  const bool imuPrintDue = millis() - lastImuPrint > 1000;
   if( mpu.imuworking ) {
     Wire.beginTransmission( MPU_I2C );
     Wire.write( MPU_READ_ADDRESS );
-    Wire.endTransmission( false );
-    if( Wire.requestFrom( MPU_I2C, MPU_READ_SIZE, true ) == MPU_READ_SIZE ) {
+    //full STOP (not a repeated-START) between the register-address write and the data read - WiFi's
+    //internal driver tasks can delay the CPU right at that transition long enough to break a repeated
+    //START's timing, causing requestFrom() to silently return 0 bytes once WiFi is active
+    unsigned char endResult = Wire.endTransmission( true );
+    unsigned char reqResult = Wire.requestFrom( MPU_I2C, MPU_READ_SIZE, true );
+    if( reqResult == MPU_READ_SIZE ) {
       Wire.readBytes( mpu.imuBytes, MPU_READ_SIZE );
       ITRVEC3( q ) FLIGHT_BUFFER.accelInput.f[q] = (signed short)( mpu.imuBytes[ q * 2 ] << 8 | mpu.imuBytes[ q * 2 + 1 ] );
       FLIGHT_BUFFER.accelUpdate = true;
@@ -74,14 +80,34 @@ void peripheral_mpu9250Loop() {
       FLIGHT_BUFFER.gyroInput.x  *= -1;
       FLIGHT_BUFFER.gyroInput.z  *= -1;
       mpu.mpuMissCount = 0;
-      DPRINTF( "[P] MPU9250 Accelerometer: Value=[ %.3f, %.3f, %.3f ]\n", FLIGHT_BUFFER.accelInput.x, 
-          FLIGHT_BUFFER.accelInput.y, FLIGHT_BUFFER.accelInput.z );
-      DPRINTF( "[P] MPU9250 Gyroscope: Value=[ %.3f, %.3f, %.3f ]\n", FLIGHT_BUFFER.gyroInput.x, 
-          FLIGHT_BUFFER.gyroInput.y, FLIGHT_BUFFER.gyroInput.z );
+      //DEBUG logging throttled to ~1/s - see periph_freertos.cpp for why
+      if( imuPrintDue ) {
+        lastImuPrint = millis();
+        DPRINTF( "[P] MPU9250 Accelerometer: Value=[ %.3f, %.3f, %.3f ]\n", FLIGHT_BUFFER.accelInput.x,
+            FLIGHT_BUFFER.accelInput.y, FLIGHT_BUFFER.accelInput.z );
+        DPRINTF( "[P] MPU9250 Gyroscope: Value=[ %.3f, %.3f, %.3f ]\n", FLIGHT_BUFFER.gyroInput.x,
+            FLIGHT_BUFFER.gyroInput.y, FLIGHT_BUFFER.gyroInput.z );
+      }
     } else if( ++mpu.mpuMissCount > 50 ) {
       mpu.imuworking = false;
+      //single explicit log at the moment reads give up, capturing the actual I2C result codes instead
+      //of failing silently
+      DPRINTF( "[P] MPU9250 DEBUG: imuworking gave up after %u misses, last endTransmission=%u, requestFrom=%u (want %u)\n",
+          mpu.mpuMissCount, endResult, reqResult, MPU_READ_SIZE );
     }
   } else {
+    //DEBUG: once the real read sequence has given up, probe once/sec with the simplest possible I2C
+    //transaction (address-only, no register read) to tell whether the bus itself is dead after full
+    //firmware startup, or whether it's specifically the register-read sequence above that's broken -
+    //a bare Wire.begin() sketch was already confirmed to read this exact chip fine in isolation.
+    if( imuPrintDue ) {
+      lastImuPrint = millis();
+      Wire.beginTransmission( MPU_I2C );
+      unsigned char mpuProbe = Wire.endTransmission();
+      Wire.beginTransmission( AK_I2C );
+      unsigned char magProbe = Wire.endTransmission();
+      DPRINTF( "[P] MPU9250 DEBUG: post-failure I2C probe MPU=%u, MAG=%u (0=ack, nonzero=no response)\n", mpuProbe, magProbe );
+    }
     ITRVEC3( q ) FLIGHT_BUFFER.accelInput.f[q] = 0;
     FLIGHT_BUFFER.accelUpdate = false;
     ITRVEC3( q ) FLIGHT_BUFFER.gyroInput.f[q] = 0;
@@ -90,7 +116,7 @@ void peripheral_mpu9250Loop() {
   if( mpu.magworking ) {
     Wire.beginTransmission( AK_I2C );
     Wire.write( AK_READ_ADDRESS );
-    Wire.endTransmission( false );
+    Wire.endTransmission( true ); //full STOP - see comment on the MPU9250 read above
     if( Wire.requestFrom( AK_I2C, AK_READ_SIZE, true ) == AK_READ_SIZE ) {
       Wire.readBytes( mpu.magBytes, AK_READ_SIZE );
       //discard stale (not DRDY) or overflowed (HOFL) samples rather than treat them as valid data
@@ -109,8 +135,11 @@ void peripheral_mpu9250Loop() {
         ITRVEC3( q ) FLIGHT_BUFFER.magInput.f[q] = mpu.magCal.A[q][0] * magRaw[0] + mpu.magCal.A[q][1] * magRaw[1] + mpu.magCal.A[q][2] * magRaw[2];
         FLIGHT_BUFFER.magUpdate = true;
         mpu.magMissCount = 0;
-        DPRINTF( "[P] AK8963 Magnetometer: Value=[ %.3f, %.3f, %.3f ]\n", FLIGHT_BUFFER.magInput.x,
-            FLIGHT_BUFFER.magInput.y, FLIGHT_BUFFER.magInput.z );
+        //DEBUG logging throttled to ~1/s - see periph_freertos.cpp for why
+        if( imuPrintDue ) {
+          DPRINTF( "[P] AK8963 Magnetometer: Value=[ %.3f, %.3f, %.3f ]\n", FLIGHT_BUFFER.magInput.x,
+              FLIGHT_BUFFER.magInput.y, FLIGHT_BUFFER.magInput.z );
+        }
       }
     } else if( ++mpu.magMissCount > 50 ) {
       mpu.magworking = false;

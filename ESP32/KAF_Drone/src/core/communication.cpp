@@ -453,7 +453,13 @@ void com_step( const radio* radio ) {
   coms.currentTime = coms.currentTime < radio->currentTime ? radio->currentTime : coms.currentTime;
   const unsigned short receiveSize = radio->receiving(); // receive packet
   packet_header* packetptr = ( packet_header* )radio->packet;
-  DPRINTF( "[C] Invoked Step: Method=%02x, Time=%lu\n", radio->method, coms.currentTime );
+  //DEBUG logging throttled to ~1/s - com_step() runs once per comms-loop iteration (~100+/s), so this
+  //was by far the largest unthrottled source of Serial traffic once the other per-loop prints were fixed
+  static unsigned long lastInvokedPrint = 0;
+  if( millis() - lastInvokedPrint > 1000 ) {
+    lastInvokedPrint = millis();
+    DPRINTF( "[C] Invoked Step: Method=%02x, Time=%lu\n", radio->method, coms.currentTime );
+  }
   if( receiveSize >= sizeof( packet_header ) && packetptr->fromID != kafenv.info.deviceID ) { // check for valid packet
     packet_header rxheader = *packetptr;
     const STDBYTE fromID = rxheader.fromID;

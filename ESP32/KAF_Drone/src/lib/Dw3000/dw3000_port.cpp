@@ -57,12 +57,12 @@ void enableDebounceClock() {
 
 void sleepms(uint32_t x)
 {
-  //_delay_ms(x); // delay by milliseconds
+  delay(x);
 }
 
 int sleepus(uint32_t x)
 {
-  //_delay_us(x); // delay by microseconds
+  delayMicroseconds(x);
   return 0;
 }
 

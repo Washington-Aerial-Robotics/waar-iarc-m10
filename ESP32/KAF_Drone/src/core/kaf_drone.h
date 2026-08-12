@@ -40,7 +40,7 @@ int printf( const char* format, ... );
 #define STDBYTE unsigned char
 #define PERSIST 1
 #define DPRINTF( ... ) PRINTF( __VA_ARGS__ )
-#define FLTSYNC //while( kafenv.info.triggerLock != MAXBYTE ) { }
+#define FLTSYNC while( kafenv.info.triggerLock != MAXBYTE ) { }
 #define FPARLEN( F ) ( sizeof( F ) / sizeof( float ) )
 #define FPFILL0( N, F ) for( unsigned char N = 0; N < FPARLEN( F ); N++ ) F[N] = 0
 #define ITRVEC3( N ) for( unsigned char N = 0; N < 3; N++ )
@@ -85,7 +85,12 @@ struct drone_state {
   struct droneinfo {           //IDENTIFICATION INFORMATION
     STDBYTE deviceID;          //Character designating a unique ID of a drone
     STDBYTE flightMode;        //Current flight mode status of the drone
-    STDBYTE triggerLock;       //Device software trigger for getting a thread lock
+    volatile STDBYTE triggerLock; //Device software trigger for getting a thread lock - volatile because FLTSYNC
+                                //busy-waits on this from one core while flight_step()'s tail busy-waits on it
+                                //from the other; without volatile the compiler can cache a stale read in either
+                                //loop and the handshake hangs forever (confirmed: com_task stuck in FLTSYNC,
+                                //flight_task never observing triggerLock go nonzero, SET_FLIGHTMODE's actual
+                                //write never reached despite the packet validating and replying SUCCESS).
     bool actuation;            //Configuration for if motor actuation is enabled or not
     unsigned int version;      //Flight software version
     float battery;             //Percentage amount of battery left
@@ -113,6 +118,14 @@ struct drone_state {
     coordinate apid;           //PID values for the acceleration controller (m/s2, s)
     coordinate qpid;           //PID values for the attitude controller (rad, s)
     coordinate wpid[3];        //PID values for the angular rate controller (rad/s, s)
+    float hoverThrust;         //Normalized (0-1) collective thrust feedforward baseline, independent of apid's
+                                //Kp - previously flight_attitudeControl() reused apid.Kp*gravitation directly as
+                                //this feedforward, so apid's proportional gain and the hover baseline were the
+                                //same tunable value; at the default apid.Kp=1 that made the feedforward alone
+                                //(~9.81) dwarf the +-0.9 closed-loop PID output, saturating thrust to maximum
+                                //regardless of actual acceleration error. Appended at the end of this struct
+                                //(not inserted) so it doesn't shift any existing field's flat-array index -
+                                //those are relied on by the webserver's per-field SCAL calibration UI.
   } cal;
 };
 extern drone_state kafenv;     //Common state information about the drone

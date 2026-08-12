@@ -1,3 +1,14 @@
+/*
+ * KNOWN ISSUE: DW3000 bring-up (dwt_checkidlerc() never sees IDLE_RC, "DW_NOT_IDLE") consistently fails
+ * on the Makerfabs ESP32-UWB-DW3000 board once peripheral_commonInit()/escsInit()/mpu9250Init() have run
+ * first, despite the chip verified working in isolation (dwt_check_dev_id() reads the correct 0xdeca0302
+ * every time when nothing else has run yet). Ruled out: wrong pins (SPI/CS/RST/IRQ all confirmed against
+ * Makerfabs' own dw3000_board_config.h), SPI clock speed (tested 8MHz and 16MHz), and pure cold-boot
+ * timing margin (retried up to 5x, 10s apart - see attemptDW3000Bringup()/DW_INIT_* below - all failed).
+ * Root cause is a real conflict with one of commonInit/escsInit/mpu9250Init, not yet isolated further.
+ * Parked as low priority; the retry logic below means it will self-recover automatically if the
+ * underlying conflict is ever fixed, without needing any other code changes.
+ */
 
 #include "../core/communication.h"
 #include "../core/firmware.h"
@@ -18,11 +29,16 @@
 #define DW_PERIOD_R23          700
 #define DW_RANGE_TOLERANCE     200
 #define DW_SPIN_TIMEOUT        300
+#define DW_INIT_IDLE_POLL_MS       300 //per-attempt cap on polling for IDLE_RC - kept short so a retry never stalls the comms task for long
+#define DW_INIT_RETRY_INTERVAL_MS 10000 //minimum spacing between bring-up retries
+#define DW_INIT_MAX_ATTEMPTS          5 //total attempts (including the initial one during setup()) before giving up
 
 static struct {
   bool working = false;
   unsigned char frameLength = 0;
   unsigned char broadcastIndex = 0;
+  unsigned char attemptCount = 0;
+  unsigned long lastAttemptTime = 0;
   radio coms;
   dwt_config_t config;
   unsigned char queueLength;
@@ -90,7 +106,46 @@ static void processRangingData( unsigned char devID, unsigned int tof1, unsigned
   ranging->distance = 0.5F * ( tof1 + tof2 ) * DWT_TIME_UNITS * SPEED_OF_LIGHT;
 }
 
+static void attemptDW3000Bringup() {
+  test_run_info( (unsigned char*)"DS TWR RESP" );
+  spiBegin( DW_IRQ, DW_RST );
+  spiSelect( DW_SS );
+  bool dwIdle = false;
+  for( unsigned long start = millis(); !( dwIdle = dwt_checkidlerc() ) && millis() - start < DW_INIT_IDLE_POLL_MS; ) {
+    delay( 20 );
+  }
+  if( !dwIdle ) {// Need to make sure DW IC is in IDLE_RC before proceeding
+    DPRINTF( "[P] DW3000 Attempting Connection: Failure=DW_NOT_IDLE\n" );
+    dw.working = false;
+  } else if( dwt_initialise( DWT_DW_INIT ) == DWT_ERROR ) {
+    DPRINTF( "[P] DW3000 Attempting Connection: Failure=DW_INITIALIZATION_ERROR\n" );
+    dw.working = false;
+  } else if( dwt_configure( &dw.config ) ) {
+    DPRINTF( "[P] DW3000 Attempting Connection: Failure=DW_CONFIGURATION_ERROR\n" );
+    dw.working = false;
+  } else {
+    DPRINTF( "[P] DW3000 Attempting Connection: Status=Success\n" );
+    dw.working = true;
+    extern dwt_txconfig_t txconfig_options;
+    dwt_configuretxrf( &txconfig_options );// Configure the TX spectrum parameters (power, PG delay and PG count)
+    dwt_setlnapamode( DWT_LNA_ENABLE|DWT_PA_ENABLE );
+    dwt_setleds( DWT_LEDS_ENABLE|DWT_LEDS_INIT_BLINK );
+    dwt_setrxantennadelay( DW_RX_ANT_DLY );// Apply default antenna delay value. See NOTE 2 below.
+    dwt_settxantennadelay( DW_TX_ANT_DLY );
+  }
+}
+
 void peripheral_dw3000Loop() {
+  //Rate-limited retry: DW3000 bring-up has shown inconsistent cold-boot timing on this board. Only
+  //retry while not yet working, spaced well apart so we never re-reset/reconfigure the chip or flood
+  //serial output back into the instability this was built to avoid, and give up after a bounded number
+  //of attempts rather than retrying forever.
+  if( !dw.working && dw.attemptCount < DW_INIT_MAX_ATTEMPTS && millis() - dw.lastAttemptTime >= DW_INIT_RETRY_INTERVAL_MS ) {
+    dw.attemptCount++;
+    dw.lastAttemptTime = millis();
+    attemptDW3000Bringup();
+    DPRINTF( "[P] DW3000 Retry: Attempt=%u/%u, Success=%s\n", dw.attemptCount, DW_INIT_MAX_ATTEMPTS, dw.working ? "Yes" : "No" );
+  }
   /*bool sendSuccess = false;
   if( dw.working ) {
     entity current;
@@ -187,30 +242,8 @@ void peripheral_dw3000Init() {
     DWT_PHRRATE_STD, (129 + 8 - 8), DWT_STS_MODE_OFF, DWT_STS_LEN_64, DWT_PDOA_M0 };
   dw.queueLength = 0;
   memset( &dw.range, DW_QUEUE_LENGTH * DW_MAX_BUFFER_LENGTH, 0 );
-  test_run_info( (unsigned char*)"DS TWR RESP" );
-  extern SPISettings _fastSPI;
-  _fastSPI = SPISettings( 16000000L, MSBFIRST, SPI_MODE0 );
-  spiBegin( DW_IRQ, DW_RST );
-  spiSelect( DW_SS );
-  delay( 20 );
-  if( !dwt_checkidlerc() ) {// Need to make sure DW IC is in IDLE_RC before proceeding
-    DPRINTF( "[P] DW3000 Attempting Connection: Failure=DW_NOT_IDLE\n" );
-    dw.working = false;
-  } else if( dwt_initialise( DWT_DW_INIT ) == DWT_ERROR ) {
-    DPRINTF( "[P] DW3000 Attempting Connection: Failure=DW_INITIALIZATION_ERROR\n" );
-    dw.working = false;
-  } else if( dwt_configure( &dw.config ) ) {
-    DPRINTF( "[P] DW3000 Attempting Connection: Failure=DW_CONFIGURATION_ERROR\n" );
-    dw.working = false;
-  } else {
-    DPRINTF( "[P] DW3000 Attempting Connection: Status=Success\n" );
-    dw.working = true;
-    extern dwt_txconfig_t txconfig_options;
-    dwt_configuretxrf( &txconfig_options );// Configure the TX spectrum parameters (power, PG delay and PG count)
-    dwt_setlnapamode( DWT_LNA_ENABLE|DWT_PA_ENABLE );
-    dwt_setleds( DWT_LEDS_ENABLE|DWT_LEDS_INIT_BLINK );
-    dwt_setrxantennadelay( DW_RX_ANT_DLY );// Apply default antenna delay value. See NOTE 2 below.
-    dwt_settxantennadelay( DW_TX_ANT_DLY );
-  }
+  dw.attemptCount = 1;
+  dw.lastAttemptTime = millis();
+  attemptDW3000Bringup();
   DPRINTF( "[P] DW 3000 Success Status: %s\n", dw.working ? "Yes" : "No" );
 }

@@ -81,7 +81,7 @@ class ConnectPanel extends StatelessWidget {
               controller: portCtrl,
               keyboardType: TextInputType.number,
               decoration: const InputDecoration(
-                hintText: '1234 (or 23 if using telnet port)',
+                hintText: '70 (the firmware\'s WiFiServer port)',
                 border: OutlineInputBorder(),
                 isDense: true,
               ),

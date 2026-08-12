@@ -8,7 +8,14 @@ peripheral kaf_reset() {
   kafenv.info.flightMode = 0;
   kafenv.info.triggerLock = 0;
   kafenv.info.actuation = false;
-  kafenv.info.version = 0x20260527;
+  //bumped from 0x20260527: removing wifi from the persistent-EEPROM layout (see periph_wifi.cpp) shifts
+  //every persistent field registered after it. This invalidates any EEPROM blob written under the old
+  //layout - kafenv/mpu9250/commander/pidtuner - so it fails validation and gets reset to defaults
+  //instead of silently misapplying misaligned bytes (e.g. old wifi credential bytes read as commander
+  //trajectory data, or old commander bytes read as PID gains).
+  //bumped again from 0x20260808: appending kafenv.cal.hoverThrust grew kafenv's persisted length, which
+  //would otherwise make firmware_handlePersistents() read one float past the end of an old EEPROM blob.
+  kafenv.info.version = 0x20260810;
   kafenv.info.battery = 100.0F;
   FPFILL0( i, kafenv.state.x.f );
   FPFILL0( i, kafenv.state.v.f );
@@ -33,5 +40,10 @@ peripheral kaf_reset() {
   kafenv.cal.wpid[0] = { 1, 0.01F, 0 };
   kafenv.cal.wpid[1] = { 1, 0.01F, 0 };
   kafenv.cal.wpid[2] = { 1, 0.01F, 0 };
+  //defaults to 0 (no feedforward at all - thrust comes only from the +-0.9-bounded apid PID term) rather
+  //than a guessed nonzero value, since no hover-throttle fraction has been measured for this airframe yet.
+  //Must be set explicitly (webserver Calibration page, "Hover FF" field) before ACCEL_SETPOINT_MODE/
+  //POS_SETPOINT_MODE will produce meaningful sustained thrust.
+  kafenv.cal.hoverThrust = 0;
   return { "kafenv", sizeof( kafenv ), sizeof( kafenv ), &kafenv, [](){ kaf_reset(); }, NULLPTR };
 }

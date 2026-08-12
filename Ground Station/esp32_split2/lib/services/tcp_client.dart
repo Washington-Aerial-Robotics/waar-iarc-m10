@@ -65,8 +65,12 @@ class TcpClient {
         .join(' ');
     print('APP TX [$hex]');
 
+    // Deliberately not calling flush() here: it returns an unawaited Future,
+    // and back-to-back sendBytes() calls (e.g. ARM's flight-mode + actuation
+    // packets) raced two overlapping flush() calls, throwing "Bad state:
+    // StreamSink is bound to a stream" and breaking the socket. add() alone
+    // is sufficient to push bytes out.
     _sock!.add(bytes);
-    _sock!.flush();
   }
 
   void sendLine(String text) {

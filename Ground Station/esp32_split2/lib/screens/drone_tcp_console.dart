@@ -16,14 +16,14 @@ class DroneTcpConsole extends StatefulWidget {
 
 class _DroneTcpConsoleState extends State<DroneTcpConsole> {
   final ipCtrl = TextEditingController(text: '172.20.10.8');
-  final portCtrl = TextEditingController(text: '80');
+  final portCtrl = TextEditingController(text: '70');
 
   late TcpClient _client;
   late final DronePacketBuilder _packetBuilder;
 
   static const int _fromId = 0x47; // 'G'
   // static const int _toId = 0x42;   // 'B'
-  final droneIdCtrl = TextEditingController(text: 'A');
+  final droneIdCtrl = TextEditingController(text: 'U');
 
   final _log = <String>[];
   StreamSubscription<String>? _sub;
@@ -54,7 +54,7 @@ class _DroneTcpConsoleState extends State<DroneTcpConsole> {
 
   Future<void> _connect() async {
     final ip = ipCtrl.text.trim();
-    final port = int.tryParse(portCtrl.text.trim()) ?? 1234;
+    final port = int.tryParse(portCtrl.text.trim()) ?? 70;
     final ctrl = context.read<DroneController>();
 
     setState(() => _connecting = true);
@@ -170,6 +170,26 @@ class _DroneTcpConsoleState extends State<DroneTcpConsole> {
     ));
   }
 
+  void _requestInfo() {
+    if (!_client.isConnected) {
+      _append('Not connected.');
+      return;
+    }
+
+    final ctrl = context.read<DroneController>();
+
+    final pkt = _packetBuilder.headerOnly(
+      messageType: DroneComms.comRequestInfo,
+      toId: ctrl.targetDroneId,
+    );
+
+    _client.sendBytes(pkt);
+    _append(_formatPacket(
+      'Sent COM_REQUEST_INFO to ${ctrl.targetDroneCharacter}',
+      pkt,
+    ));
+  }
+
   void _sendTestControlBytes() {
     if (!_client.isConnected) {
       _append('Not connected.');
@@ -213,6 +233,7 @@ class _DroneTcpConsoleState extends State<DroneTcpConsole> {
   @override
   Widget build(BuildContext context) {
     final connected = _client.isConnected;
+    final droneCtrl = context.watch<DroneController>();
 
     return Scaffold(
       appBar: AppBar(
@@ -289,6 +310,45 @@ class _DroneTcpConsoleState extends State<DroneTcpConsole> {
                           ),
                         ),
                       ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: SizedBox(
+                            height: 56,
+                            child: OutlinedButton(
+                              onPressed: _requestInfo,
+                              child: const Text(
+                                'Get Info',
+                                style: TextStyle(fontSize: 18),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Telemetry:',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.04),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.black12),
+                      ),
+                      child: Text(
+                        '${droneCtrl.telemetry}',
+                        style: const TextStyle(
+                          fontFamily: 'monospace',
+                          fontSize: 13,
+                        ),
+                      ),
                     ),
                     const SizedBox(height: 20),
                     Text(

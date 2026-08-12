@@ -93,6 +93,10 @@ void peripheral_wifiLoop() {
       WiFi.mode( WIFI_STA );
       WiFi.begin( wifi.p.networkName, wifi.p.networkPassword );
     }
+    //WiFi modem sleep periodically blocks the CPU for tens of ms at unpredictable times to power-cycle
+    //the radio - well-documented on ESP32 as breaking time-sensitive I2C/SPI transactions (exactly the
+    //MPU9250 read failures seen once WiFi came up). Disabling it trades some power draw for reliability.
+    WiFi.setSleep( false );
     wifi.wifiConnected = false;
     wifi.networkHash = wifi.p.networkHash;
   }
@@ -106,7 +110,12 @@ void peripheral_wifiLoop() {
       Serial.printf( "GG\076G[ip=%s]\n", wifi.p.networkAddress );
       wifi.wifiConnected = true;
     }
-    DPRINTF( "[P] WiFi Active Step: IP=%s\n", wifi.p.networkAddress );
+    //DEBUG logging throttled to ~1/s - see periph_freertos.cpp for why
+    static unsigned long lastWifiPrint = 0;
+    if( millis() - lastWifiPrint > 1000 ) {
+      lastWifiPrint = millis();
+      DPRINTF( "[P] WiFi Active Step: IP=%s\n", wifi.p.networkAddress );
+    }
     if( wifi.client.connected() || ( wifi.client = wifi.server.accept() ).connected() ) {
       wifi.coms.currentTime = millis();
       com_step( &wifi.coms );
@@ -117,7 +126,12 @@ void peripheral_wifiLoop() {
 }
 
 void peripheral_wifiInit() {
-  firmware_registerPeripheral( { "wifi", sizeof( wifi.p ), sizeof( wifi ), &wifi, &peripheral_wifiInit, &peripheral_wifiLoop } );
+  //NOT registered as persistent (0, not sizeof(wifi.p)): this board's EEPROM contains a validly-signed
+  //but stale/blank wifi.p blob from an earlier flash, and firmware_handlePersistents() restores ALL
+  //persistent peripherals from one shared blob on every boot - that was silently overwriting these
+  //correct hardcoded WiFi AP defaults with blank credentials moments after boot (visible in logs as
+  //"Attempting WiFi Connection: Network=, Password=" right after "Running Startup Commands").
+  firmware_registerPeripheral( { "wifi", 0, sizeof( wifi ), &wifi, &peripheral_wifiInit, &peripheral_wifiLoop } );
   DPRINTF( "[P] Initializing WiFi\n" );
   wifi.p.wifiSetAP = true;
   strcpy( wifi.p.networkName,     "KAF_Quadcopter_Drone" );
