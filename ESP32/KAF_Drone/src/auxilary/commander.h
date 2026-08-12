@@ -14,6 +14,12 @@
 #define FLIGHTPATH_RETURNHOME     5
 #define FLIGHTPATH_CIRCLE         6
 
+//How long a POS_SETPOINT_MODE/TRAJECTORY_MODE setpoint (kafenv.cmd.setpointMillis, set by COM_SET_TRAJSETPT)
+//may go without a fresh update before commander_step() treats it as lost communication with the Pi and
+//falls back to FLIGHTPATH_LAND - the same emergency-descent path already used for ground-station disconnect
+//and low battery. Deliberately short relative to those (Pi setpoints are expected at well over 1Hz).
+#define SETPOINT_STALE_MS 500UL
+
 void commander_setTrajectories( STDBYTE mode, const float args[4] );
 
 peripheral commander_reset();

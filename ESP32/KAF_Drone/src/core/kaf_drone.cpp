@@ -23,6 +23,9 @@ peripheral kaf_reset() {
   FPFILL0( i, kafenv.state.w.f );
   FPFILL0( i, kafenv.cmd.motors );
   FPFILL0( i, kafenv.cmd.setpoints );
+  kafenv.cmd.setpointVelocity = { 0, 0, 0 };
+  kafenv.cmd.setpointSeq = 0;
+  kafenv.cmd.setpointMillis = 0;
   kafenv.cal.anglealpha    = 0.15F;
   kafenv.cal.positionalpha = 9.53F;
   kafenv.cal.gravitation   = 9.81F;
