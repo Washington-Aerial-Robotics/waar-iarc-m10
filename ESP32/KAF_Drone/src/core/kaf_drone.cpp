@@ -15,7 +15,13 @@ peripheral kaf_reset() {
   //trajectory data, or old commander bytes read as PID gains).
   //bumped again from 0x20260808: appending kafenv.cal.hoverThrust grew kafenv's persisted length, which
   //would otherwise make firmware_handlePersistents() read one float past the end of an old EEPROM blob.
-  kafenv.info.version = 0x20260810;
+  //bumped again from 0x20260810: this board's persisted mpu9250 blob (periph_mpu9250.cpp's magCal, also
+  //covered by this same version check) was stale/corrupt - its hard/soft-iron A/b matrix was producing
+  //-inf out of AK8963Loop()'s A*(raw-b) transform every cycle instead of the sane, real-calibrated values
+  //hardcoded in that file's static initializer. Bumping invalidates the whole blob (kafenv/mpu9250/
+  //commander/pidtuner together, same as the two bumps above) so it falls back to those correct defaults -
+  //this also resets kafenv.cal's PID gains, which must be manually restored via pid_calibrate.py afterward.
+  kafenv.info.version = 0x20260813;
   kafenv.info.battery = 100.0F;
   FPFILL0( i, kafenv.state.x.f );
   FPFILL0( i, kafenv.state.v.f );
