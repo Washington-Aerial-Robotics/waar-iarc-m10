@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>drone_hardware_bridge</name>
+  <version>0.1.0</version>
+  <description>Fail-closed ROS 2 bridge between WAAR autonomy and the KAF ESP32.</description>
+  <maintainer email="team@iarc.local">WAAR IARC Team</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>std_srvs</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
+  <exec_depend>mas_interfaces</exec_depend>
+  <exec_depend>python3-serial</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>slam</exec_depend>
+  <exec_depend>waar_perception</exec_depend>
+  <exec_depend>mas_sync</exec_depend>
+  <exec_depend>mas_task</exec_depend>
+  <exec_depend>mas_mission</exec_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

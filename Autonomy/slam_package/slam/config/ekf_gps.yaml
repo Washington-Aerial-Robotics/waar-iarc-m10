@@ -24,6 +24,15 @@ ekf_filter_node:
                    false, false, false,
                    false, false, false]
 
+    # Binary KAF firmware state supplied by drone_hardware_bridge.  Unlike
+    # navsat_transform, this is already launch-relative metric odometry.
+    odom2: /esp32/odometry
+    odom2_config: [true,  true,  true,
+                   false, false, false,
+                   true,  true,  true,
+                   false, false, false,
+                   false, false, false]
+
     # Visual/Stereo Odometry input - x, y, z velocity
     odom0: /stereo/odom
     odom0_config: [false, false, false,
@@ -32,7 +41,9 @@ ekf_filter_node:
                   false, false, false,
                   false, false, false]
 
-    # IMU input - yaw, pitch, roll, angular velocities
+    # IMU input. The hardware bridge marks orientation/linear acceleration
+    # unavailable when firmware telemetry does not provide them; angular
+    # velocity remains usable without inventing an orientation quaternion.
     imu0: /imu/data
     imu0_config: [false, false, false,
                   true,  true,  true,

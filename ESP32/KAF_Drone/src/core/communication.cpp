@@ -1,5 +1,6 @@
 #include "communication.h"
 #include "../auxilary/estimation.h"
+#include "../auxilary/commander.h"
 
 #if ALT_DEFINE
 #define NAN 0.0F
@@ -89,6 +90,8 @@ static struct {//NETWORK DATA
     void( *handlingFunction )( const void*, const unsigned short, const packet_header );
   } sendPackets[SEND_QUEUE_COUNT];
   unsigned short( *replyHandlers[ RECEIVE_FUNC_COUNT ] )( void**, const void*, const unsigned short );
+  unsigned short( *validatedReplyHandlers[ RECEIVE_FUNC_COUNT ] )( void**, const void*, const unsigned short, const packet_header );
+  STDBYTE validatedSuccessTypes[ RECEIVE_FUNC_COUNT ];
   void( *processingHandlers[ RECEIVE_FUNC_COUNT * 2 ] )( const void*, const packet_header );
   struct {
     char headerBuffer[ sizeof( packet_header ) + sizeof( fwd ) ];
@@ -202,7 +205,7 @@ void* com_sendMessage( const STDBYTE method, const unsigned char attempts, packe
   return NULLPTR;
 }
 
-void com_receiveMessage( const STDBYTE type, const unsigned char minContentSize, 
+void com_receiveMessage( const STDBYTE type, const unsigned char minContentSize,
       unsigned short( *reply )( void**, const void*, const unsigned short ), void( *process )( const void*, const packet_header ) ) {
   unsigned char i = ( type & ~COM_CMD ) - RECEIVE_FUNC_OFFSET;
   if( i < RECEIVE_FUNC_COUNT ) {
@@ -218,7 +221,61 @@ void com_receiveMessage( const STDBYTE type, const unsigned char minContentSize,
   }
 }
 
-static void* replyMessage( const comContent* rx, STDBYTE* messageType, unsigned short* messageSize ) {
+void com_receiveValidatedMessage( const STDBYTE type, const unsigned char minContentSize,
+      unsigned short( *reply )( void**, const void*, const unsigned short, const packet_header ),
+      void( *process )( const void*, const packet_header ), const STDBYTE successReplyType ) {
+  unsigned char i = ( type & ~COM_CMD ) - RECEIVE_FUNC_OFFSET;
+  if( i < RECEIVE_FUNC_COUNT ) {
+    DPRINTF( "[C] Registering Validated Receive Type=%02x, Size=%u, Reply=%08x, Process=%08x\n", type, minContentSize, reply, process );
+    coms.contentSizes[type] = minContentSize + sizeof( packet_header );
+    coms.contentSizes[ COM_FWD | type ] = coms.contentSizes[type] + sizeof( fwd );
+    coms.validatedReplyHandlers[i] = reply;
+    coms.validatedSuccessTypes[i] = successReplyType;
+    coms.processingHandlers[i] = process;
+  }
+}
+
+//Sender IDs are not cryptographic authentication, but a fail-closed allowlist prevents an accidental or
+//unknown AP client from invoking legacy mutation commands. The dedicated KILL command intentionally remains
+//universally reachable as the emergency/reset path; its policy is kept explicit here rather than emerging
+//from an omitted check. Header-aware validators below further narrow each Pi command's payload and state.
+static bool commandSenderAuthorized( const STDBYTE messageType, const STDBYTE sender ) {
+  switch( messageType ) {
+    case COM_SET_ACTUATION : case COM_SET_FLIGHTMODE : case COM_SET_TRAJECTORY :
+      return sender == GROUND_STATION_ID || sender == PI_CONTROLLER_ID;
+    case COM_SET_TRAJSETPT : case COM_SET_GPSORIGIN :
+      return sender == PI_CONTROLLER_ID;
+    case COM_SET_SENDMSG : case COM_SET_INFO : case COM_SET_STEST : case COM_SET_SETPT :
+    case COM_SET_MOTORS : case COM_SET_CALIB : case COM_SET_KAFENV : case COM_SET_MEMORY :
+    case COM_SET_INVOKEFUNC : case COM_SET_STARTUP : case COM_SET_STORAGE : case COM_SET_TRAJCONFIG :
+    case COM_SET_PIDTUNING : case COM_SET_SIM_VARS : case COM_SET_RESP_VARS : case COM_SET_WIFI :
+      return sender == GROUND_STATION_ID;
+    case COM_SET_KILL :
+      return true;
+    default :
+      return true;
+  }
+}
+
+static unsigned short fixedMutationSize( const STDBYTE messageType ) {
+  switch( messageType ) {
+    case COM_SET_INFO : return sizeof( coms.tx.content.droneinfo );
+    case COM_SET_STEST : return sizeof( coms.tx.content.stateestimate );
+    case COM_SET_MOTORS : return sizeof( coms.tx.content.motorvalue );
+    case COM_SET_CALIB : return sizeof( coms.tx.content.calibration );
+    case COM_SET_KAFENV : return sizeof( coms.tx.content.drone );
+    default : return 0;
+  }
+}
+
+static void* replyMessage( const comContent* rx, STDBYTE* messageType, unsigned short* messageSize,
+    const packet_header rxheader ) {
+  if( !commandSenderAuthorized( *messageType, rxheader.fromID ) ) {
+    DPRINTF( "[C] Rejected Unauthorized Command: Type=%02x, Sender='%c'\n", *messageType, rxheader.fromID );
+    *messageType = COM_FAILURE;
+    *messageSize = 0;
+    return &coms.tx.content;
+  }
   switch( *messageType ) {
     case COM_REQUEST_PING : {
       *messageType = COM_REPLY_PING;
@@ -227,10 +284,18 @@ static void* replyMessage( const comContent* rx, STDBYTE* messageType, unsigned 
       break;
     }
     case COM_SET_ACTUATION : {
-      kafenv.info.actuation = rx->actuation == MAXBYTE;
-      *messageType = COM_SUCCESS;
+      const bool requestedActuation = rx->actuation == MAXBYTE;
+      const bool validValue = rx->actuation == 0 || requestedActuation;
+      if( *messageSize != sizeof( rx->actuation ) || !validValue
+          || ( requestedActuation && !commander_canArm( rxheader.fromID ) ) ) {
+        *messageType = COM_FAILURE;
+        DPRINTF( "[C] Handling Reply: Received=SET_ACTUATION, Reply=FAILURE (value/sender/arming guard)\n" );
+      } else {
+        kafenv.info.actuation = requestedActuation;
+        *messageType = COM_SUCCESS;
+        DPRINTF( "[C] Handling Reply: Received=SET_ACTUATION, Reply=SUCCESS\n" );
+      }
       *messageSize = 0;
-      DPRINTF( "[C] Handling Reply: Received=SET_TRIGGER, Reply=SUCCESS\n" );
       break;
     }
     case COM_REQUEST_DEVICES : {
@@ -243,7 +308,7 @@ static void* replyMessage( const comContent* rx, STDBYTE* messageType, unsigned 
     }
     case COM_SET_SENDMSG : {
       const unsigned short contentSize = *messageSize - sizeof( rx->sendmsg.h );
-      if( rx->sendmsg.h.length > contentSize ) {
+      if( rx->sendmsg.h.length != contentSize ) {
         *messageType = COM_FAILURE;
         DPRINTF( "[C] Handling Reply: Received=SET_SENDMSG, Reply=FAILURE\n" );
       } else {
@@ -291,8 +356,11 @@ static void* replyMessage( const comContent* rx, STDBYTE* messageType, unsigned 
       break;
     }
     case COM_SET_FLIGHTMODE :  {
-      if( rx->flightmode.h.commandLength <= FPARLEN( kafenv.cmd.setpoints ) && 
-          ( (unsigned short)rx->flightmode.h.commandLength ) * sizeof( float ) <= *messageSize ) {
+      const unsigned short valuesSize = ( (unsigned short)rx->flightmode.h.commandLength ) * sizeof( float );
+      if( rx->flightmode.h.commandLength <= FPARLEN( kafenv.cmd.setpoints ) &&
+          sizeof( rx->flightmode.h ) + valuesSize == *messageSize &&
+          commander_validateFlightModeCommand( rx->flightmode.h.flightMode, rx->flightmode.h.commandLength,
+              rx->flightmode.value, rxheader.fromID ) ) {
         *messageType = COM_SUCCESS;
         DPRINTF( "[C] Handling Reply: Received=SET_FLIGHTMODE, Reply=SUCCESS\n" );
       } else {
@@ -303,8 +371,14 @@ static void* replyMessage( const comContent* rx, STDBYTE* messageType, unsigned 
       break;
     }
     case COM_SET_SETPT : {
-      if( rx->setpoint.length <= FPARLEN( kafenv.cmd.setpoints ) && 
-          ( (unsigned short)rx->setpoint.length ) * sizeof( float ) <= *messageSize ) {
+      const unsigned short valuesSize = ( (unsigned short)rx->setpoint.length ) * sizeof( float );
+      bool valuesFinite = true;
+      for( unsigned char i = 0; i < rx->setpoint.length && i < FPARLEN( kafenv.cmd.setpoints ); i++ ) {
+        valuesFinite = valuesFinite && isfinite( rx->setpoint.value[i] );
+      }
+      if( rx->setpoint.length <= FPARLEN( kafenv.cmd.setpoints ) &&
+          sizeof( rx->setpoint.length ) + valuesSize == *messageSize && valuesFinite
+          && rxheader.fromID == GROUND_STATION_ID ) {
         *messageType = COM_SUCCESS;
         DPRINTF( "[C] Handling Reply: Received=SET_SETPT, Reply=SUCCESS\n" );
       } else {
@@ -350,7 +424,7 @@ static void* replyMessage( const comContent* rx, STDBYTE* messageType, unsigned 
     }
     case COM_SET_MEMORY : {
       const unsigned short contentSize = *messageSize - sizeof( rx->memtransfer.h );
-      if( rx->memtransfer.h.length > contentSize ) {
+      if( rx->memtransfer.h.length != contentSize ) {
         *messageType = COM_FAILURE;
         DPRINTF( "[C] Handling Reply: Received=SET_MEMORY, Reply=FAILURE\n" );
       } else {
@@ -361,21 +435,29 @@ static void* replyMessage( const comContent* rx, STDBYTE* messageType, unsigned 
       break;
     }
     case COM_SET_INFO : case COM_SET_STEST : case COM_SET_MOTORS : case COM_SET_CALIB : case COM_SET_KAFENV : {
+      const bool validLength = *messageSize == fixedMutationSize( *messageType );
       *messageSize = 0;
-      *messageType = COM_SUCCESS;
-      DPRINTF( "[C] Handling Reply: Received=SET_COMMAND, Reply=SUCCESS\n" );
+      *messageType = validLength ? COM_SUCCESS : COM_FAILURE;
+      DPRINTF( "[C] Handling Reply: Received=SET_COMMAND, Reply=%s\n", validLength ? "SUCCESS" : "FAILURE" );
       break;
     }
     default : {
       const STDBYTE typeUnmasked = *messageType & COM_ID;
       if( typeUnmasked >= RECEIVE_FUNC_OFFSET && typeUnmasked - RECEIVE_FUNC_OFFSET < RECEIVE_FUNC_COUNT ) {
-        unsigned short( *reply )( void**, const void*, const unsigned short ) = coms.replyHandlers[ typeUnmasked - RECEIVE_FUNC_OFFSET ];
-        if( reply != NULLPTR ) {
+        const unsigned char handlerIndex = typeUnmasked - RECEIVE_FUNC_OFFSET;
+        unsigned short( *reply )( void**, const void*, const unsigned short ) = coms.replyHandlers[handlerIndex];
+        unsigned short( *validatedReply )( void**, const void*, const unsigned short, const packet_header ) =
+            coms.validatedReplyHandlers[handlerIndex];
+        if( reply != NULLPTR || validatedReply != NULLPTR ) {
           DPRINTF( "[C] Invoking Custom Reply Command: Type=%02x, Unmasked=%02x\n", *messageType, typeUnmasked );
-          void* buffer = &coms.tx;
-          unsigned short sendLength = reply( &buffer, rx, *messageSize );
+          //Custom payloads start at content. headerBuffer reserves enough space immediately before it for
+          //normal and forwarded headers; using &coms.tx here wrote payloads into that reserve and made
+          //prepareSendBuffer() step outside the object.
+          void* buffer = &coms.tx.content;
+          unsigned short sendLength = validatedReply != NULLPTR ?
+              validatedReply( &buffer, rx, *messageSize, rxheader ) : reply( &buffer, rx, *messageSize );
           if( buffer != NULLPTR ) {
-            *messageType = typeUnmasked;
+            *messageType = validatedReply != NULLPTR ? coms.validatedSuccessTypes[handlerIndex] : typeUnmasked;
             *messageSize = sendLength;
             DPRINTF( "[C] Handling Reply: Received=CUSTOM_COMMAND, Reply=CUSTOM_REPLY\n" );
             return buffer;
@@ -407,6 +489,8 @@ peripheral com_reset() {
   }
   for( unsigned char i = 0; i < RECEIVE_FUNC_COUNT; i++ ) {
     coms.replyHandlers[i] = NULLPTR;
+    coms.validatedReplyHandlers[i] = NULLPTR;
+    coms.validatedSuccessTypes[i] = COM_SUCCESS;
     coms.processingHandlers[i] = NULLPTR;
     coms.processingHandlers[ i + RECEIVE_FUNC_COUNT ] = NULLPTR;
   }
@@ -427,6 +511,8 @@ peripheral com_reset() {
   coms.contentSizes[COM_SET_MOTORS]      += sizeof( coms.tx.content.motorvalue );
   coms.contentSizes[COM_REPLY_CALIB]     += sizeof( coms.tx.content.calibration );
   coms.contentSizes[COM_SET_CALIB]       += sizeof( coms.tx.content.calibration );
+  coms.contentSizes[COM_REPLY_KAFENV]    += sizeof( coms.tx.content.drone );
+  coms.contentSizes[COM_SET_KAFENV]      += sizeof( coms.tx.content.drone );
   coms.contentSizes[COM_REQUEST_MEMORY]  += sizeof( coms.tx.content.memtransfer.h );
   coms.contentSizes[COM_REPLY_MEMORY]    += sizeof( coms.tx.content.memtransfer.h );
   coms.contentSizes[COM_SET_MEMORY]      += sizeof( coms.tx.content.memtransfer.h );
@@ -493,7 +579,10 @@ void com_step( const radio* radio ) {
           if( requiresReply ) { // check for forwarding recepient
             STDBYTE messageType = rxheader.messageType ^ COM_FWD;
             sendSize = contentSize - sizeof( fwd );
-            void* tx = replyMessage( ( comContent* )( ( fwd* )content + 1 ), &messageType, &sendSize );
+            packet_header logicalHeader = rxheader;
+            logicalHeader.fromID = rxFwd.originID;
+            logicalHeader.toID = rxFwd.targetID;
+            void* tx = replyMessage( ( comContent* )( ( fwd* )content + 1 ), &messageType, &sendSize, logicalHeader );
             sendSize += sizeof( packet_header ) + sizeof( fwd );
             fwd* txFwd = ( fwd* )tx - 1;
             txFwd->originID = kafenv.info.deviceID;
@@ -554,8 +643,10 @@ void com_step( const radio* radio ) {
         DPRINTF( "[C] Command Packet\n" );
         STDBYTE messageType = rxheader.messageType;
         unsigned short sendSize = contentSize;
-        void* tx = replyMessage( content, &messageType, &sendSize );
+        void* tx = replyMessage( content, &messageType, &sendSize, rxheader );
         radio->replying( prepareSendBuffer( tx, rxheader, messageType ), sendSize + sizeof( packet_header ) );
+        //Only successful commands are processed. COM_FAILURE is a validation failure, not a request to
+        //mutate state; COM_INVALID prevents the command switch below from running.
         rxheader.messageType = messageType == COM_FAILURE ? COM_INVALID : rxheader.messageType;
       }
       for( int i = 0; i < SEND_QUEUE_COUNT; i++ ) { // for all messaged addressed as recepient, check for queue listeners
@@ -625,20 +716,12 @@ void com_step( const radio* radio ) {
           break;
         }
         case COM_SET_FLIGHTMODE : {
-          const STDBYTE requestedModeBits = DEFAULT_MODES_MASK & content->flightmode.h.flightMode;
-          //Refuse to enter (or leave the drone in) a position-dependent flight mode without a validated
-          //position estimate - arming into POS_SETPOINT_MODE/TRAJECTORY_MODE on an invalid/never-acquired
-          //GPS fix would otherwise let the drone try to "hold position" against a fabricated zero, which
-          //is exactly the silent-bad-coordinates failure this guard exists to prevent.
-          if( ( requestedModeBits == POS_SETPOINT_MODE || requestedModeBits == TRAJECTORY_MODE ) && !estimation_positionValid() ) {
-            DPRINTF( "[C] Rejected Flight Mode Change: Requested=%02x requires a valid position estimate\n",
-                content->flightmode.h.flightMode );
-            break;
-          }
           kafenv.info.triggerLock = 1;
           FLTSYNC;
           kafenv.info.flightMode = content->flightmode.h.flightMode;
           memcpy( kafenv.cmd.setpoints, content->flightmode.value, content->flightmode.h.commandLength * sizeof( float ) );
+          commander_acceptFlightModeCommand( content->flightmode.h.flightMode, content->flightmode.h.commandLength,
+              rxheader.fromID );
           kafenv.info.triggerLock = 0;
           break;
         }
@@ -654,6 +737,7 @@ void com_step( const radio* radio ) {
           kafenv.info.triggerLock = 1;
           FLTSYNC;
           memcpy( kafenv.cmd.setpoints, content->setpoint.value, content->setpoint.length * sizeof( float ) );
+          commander_acceptLegacySetpoint( rxheader.fromID, content->setpoint.length );
           kafenv.info.triggerLock = 0;
           break;
         }

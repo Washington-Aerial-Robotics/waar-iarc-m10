@@ -461,3 +461,77 @@ void flight_step( const imu* sensor ) {
     DPRINTF( "[F] Flight Trigger Lock Released\n" );
   }
 }
+
+bool flight_rotationQuaternion( float quaternion[4] ) {
+  const float* m = flight.rotMat;
+  for( unsigned char i = 0; i < 9; i++ ) {
+    if( !isfinite( m[i] ) ) {
+      quaternion[0] = quaternion[1] = quaternion[2] = 0;
+      quaternion[3] = 1;
+      return false;
+    }
+  }
+  //Finite alone is not sufficient: an all-zero/uninitialized matrix converts into a normalized-looking
+  //quaternion. Require a proper, approximately orthonormal rotation before marking attitude telemetry valid.
+  const float row0Norm = m[0] * m[0] + m[1] * m[1] + m[2] * m[2];
+  const float row1Norm = m[3] * m[3] + m[4] * m[4] + m[5] * m[5];
+  const float row2Norm = m[6] * m[6] + m[7] * m[7] + m[8] * m[8];
+  const float row01 = m[0] * m[3] + m[1] * m[4] + m[2] * m[5];
+  const float row02 = m[0] * m[6] + m[1] * m[7] + m[2] * m[8];
+  const float row12 = m[3] * m[6] + m[4] * m[7] + m[5] * m[8];
+  const float determinant = m[0] * ( m[4] * m[8] - m[5] * m[7] )
+      - m[1] * ( m[3] * m[8] - m[5] * m[6] )
+      + m[2] * ( m[3] * m[7] - m[4] * m[6] );
+  if( row0Norm < 0.9F || row0Norm > 1.1F || row1Norm < 0.9F || row1Norm > 1.1F
+      || row2Norm < 0.9F || row2Norm > 1.1F || row01 * row01 > 0.01F
+      || row02 * row02 > 0.01F || row12 * row12 > 0.01F
+      || determinant < 0.9F || determinant > 1.1F ) {
+    quaternion[0] = quaternion[1] = quaternion[2] = 0;
+    quaternion[3] = 1;
+    return false;
+  }
+  const float trace = m[0] + m[4] + m[8];
+  float x, y, z, w;
+  if( trace > 0 ) {
+    const float s = 2 * sqrtf( trace + 1 );
+    if( s <= EF ) goto invalid_quaternion;
+    w = 0.25F * s;
+    x = ( m[7] - m[5] ) / s;
+    y = ( m[2] - m[6] ) / s;
+    z = ( m[3] - m[1] ) / s;
+  } else if( m[0] > m[4] && m[0] > m[8] ) {
+    const float s = 2 * sqrtf( 1 + m[0] - m[4] - m[8] );
+    if( s <= EF ) goto invalid_quaternion;
+    w = ( m[7] - m[5] ) / s;
+    x = 0.25F * s;
+    y = ( m[1] + m[3] ) / s;
+    z = ( m[2] + m[6] ) / s;
+  } else if( m[4] > m[8] ) {
+    const float s = 2 * sqrtf( 1 + m[4] - m[0] - m[8] );
+    if( s <= EF ) goto invalid_quaternion;
+    w = ( m[2] - m[6] ) / s;
+    x = ( m[1] + m[3] ) / s;
+    y = 0.25F * s;
+    z = ( m[5] + m[7] ) / s;
+  } else {
+    const float s = 2 * sqrtf( 1 + m[8] - m[0] - m[4] );
+    if( s <= EF ) goto invalid_quaternion;
+    w = ( m[3] - m[1] ) / s;
+    x = ( m[2] + m[6] ) / s;
+    y = ( m[5] + m[7] ) / s;
+    z = 0.25F * s;
+  }
+  {
+    const float norm = sqrtf( x * x + y * y + z * z + w * w );
+    if( !isfinite( norm ) || norm <= EF ) goto invalid_quaternion;
+    quaternion[0] = x / norm;
+    quaternion[1] = y / norm;
+    quaternion[2] = z / norm;
+    quaternion[3] = w / norm;
+    return true;
+  }
+invalid_quaternion:
+  quaternion[0] = quaternion[1] = quaternion[2] = 0;
+  quaternion[3] = 1;
+  return false;
+}

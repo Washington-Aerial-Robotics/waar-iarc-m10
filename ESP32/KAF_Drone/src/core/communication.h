@@ -60,6 +60,9 @@
 #define COM_REPLY_WIFI       (       0 | 33 )//wifi
 #define COM_SET_WIFI         ( COM_CMD | 34 )//wifi
 #define COM_SET_KILL         ( COM_CMD | 35 )//esp32
+#define COM_SET_GPSORIGIN    ( COM_CMD | 36 )//commander - latch a validated GPS fix as the local origin
+#define COM_REQUEST_TELEMETRY ( COM_CMD | 37 )//commander - request the packed autonomy telemetry snapshot
+#define COM_REPLY_TELEMETRY  (           37 )//commander - packed autonomy telemetry snapshot
 //50-59 communication method specific messages
 #define COM_RANGING_1        ( COM_CMD | 50 )//dw3000
 #define COM_RANGING_2        ( COM_CMD | 51 )//dw3000
@@ -99,8 +102,14 @@ unsigned char com_getEntity( entity* entity, unsigned char index );
 
 void* com_sendMessage( const STDBYTE method, const unsigned char attempts, packet_header header, const void* content, 
     const unsigned short size, void( *handler )( const void*, const unsigned short, const packet_header ) );
-void com_receiveMessage( const STDBYTE type, const unsigned char minContentSize, 
+void com_receiveMessage( const STDBYTE type, const unsigned char minContentSize,
       unsigned short( *reply )( void**, const void*, const unsigned short ), void( *process )( const void*, const packet_header ) );
+//Header-aware variant for commands whose acceptance depends on the sender. A NULL response from `reply`
+//causes COM_FAILURE and prevents `process` from running, so a rejected command is never acknowledged as if
+//it had been applied.
+void com_receiveValidatedMessage( const STDBYTE type, const unsigned char minContentSize,
+      unsigned short( *reply )( void**, const void*, const unsigned short, const packet_header ),
+      void( *process )( const void*, const packet_header ), const STDBYTE successReplyType = COM_SUCCESS );
 
 peripheral com_reset();
 void com_step( const radio* radio );

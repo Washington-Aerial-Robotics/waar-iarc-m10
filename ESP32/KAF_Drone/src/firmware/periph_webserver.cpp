@@ -543,6 +543,7 @@ static void handleUploadsEnd() {
 
 static void handleCommand() {
   if( webserver.server.args() == 1 ) {
+    bool commandAccepted = true;
     char command[5] = { 0, 0, 0, 0, 0 };
     strncpy( command, webserver.server.argName( 0 ).c_str(), sizeof( command ) - 1 );
     strncpy( webserver.scratch, webserver.server.arg( 0 ).c_str(), sizeof( webserver.scratch ) - 1 );
@@ -764,7 +765,7 @@ static void handleCommand() {
         }
         DPRINTF( "[P] Web Server Command Data: Type=%c, Arg0=%.3f, Arg1=%.3f, Arg2=%.3f, Arg3=%.3f\n", 
             trajtype[0], cmdargs[0], cmdargs[1], cmdargs[2], cmdargs[3] );
-        commander_setTrajectories( trajtype[0] - '0', cmdargs );
+        commandAccepted = commander_setTrajectories( trajtype[0] - '0', cmdargs );
         break;
       }
       case hashcode4( "SCAL" ) : {
@@ -804,7 +805,10 @@ static void handleCommand() {
         webserver.server.send( 403, "text/plain", "NACK" );
       }
     }
-    if( isgetcmd ) {
+    if( !commandAccepted ) {
+      DPRINTF( "[P] Web Server Command Rejected: Response=NACK\n" );
+      webserver.server.send( 403, "text/plain", "NACK" );
+    } else if( isgetcmd ) {
       DPRINTF( "[P] Web Server Command Reply: Response=%s\n", webserver.scratch );
       webserver.server.send( 200, "application/json", webserver.scratch );
     } else {

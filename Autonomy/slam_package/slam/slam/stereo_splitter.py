@@ -5,6 +5,9 @@ from cv_bridge import CvBridge
 import cv2
 import yaml
 
+from .calibration import scaled_camera_info
+
+
 class StereoSplitter(Node):
     def __init__(self):
         super().__init__('stereo_splitter')
@@ -17,8 +20,8 @@ class StereoSplitter(Node):
         right_calib_path = self.get_parameter('right_calib').value
 
         # Load, scale, and permanently set frame IDs
-        self.info_left = self.load_and_scale_camera_info(left_calib_path, 'camera_left_frame')
-        self.info_right = self.load_and_scale_camera_info(right_calib_path, 'camera_right_frame')
+        self.info_left = self.load_and_scale_camera_info(left_calib_path, 'camera_left_optical_frame')
+        self.info_right = self.load_and_scale_camera_info(right_calib_path, 'camera_right_optical_frame')
         
         self.sub_image = self.create_subscription(Image, '/image_raw', self.image_callback, 10)
         
@@ -37,30 +40,29 @@ class StereoSplitter(Node):
         try:
             with open(yaml_file, 'r') as f:
                 calib_data = yaml.safe_load(f)
-
-            msg.width = calib_data['image_width'] // 2
-            msg.height = calib_data['image_height'] // 2
-            msg.distortion_model = calib_data['distortion_model']
-            msg.d = calib_data['distortion_coefficients']['data']
-            
-            K = calib_data['camera_matrix']['data']
-            msg.k = [K[0]/2, K[1],   K[2]/2, 
-                     K[3],   K[4]/2, K[5]/2, 
-                     K[6],   K[7],   K[8]]
-            
-            msg.r = calib_data['rectification_matrix']['data']
-            
-            P = calib_data['projection_matrix']['data']
-            msg.p = [P[0]/2, P[1],   P[2]/2, P[3]/2, 
-                     P[4],   P[5]/2, P[6]/2, P[7]/2, 
-                     P[8],   P[9],   P[10],  P[11]]
+            fields = scaled_camera_info(calib_data)
+            msg.width = fields['width']
+            msg.height = fields['height']
+            msg.distortion_model = fields['distortion_model']
+            msg.d = fields['d']
+            msg.k = fields['k']
+            msg.r = fields['r']
+            msg.p = fields['p']
         except Exception as e:
             self.get_logger().error(f"Failed to load calibration from {yaml_file}: {e}")
             
         return msg
 
     def image_callback(self, msg):
-        cv_img = self.bridge.imgmsg_to_cv2(msg, desired_encoding='mono8')
+        try:
+            cv_img = self.bridge.imgmsg_to_cv2(msg, desired_encoding='mono8')
+        except Exception as exc:
+            self.get_logger().error(f"Unable to decode stereo frame: {exc}")
+            return
+        if cv_img.ndim != 2 or cv_img.shape[1] < 2 or cv_img.shape[1] % 2:
+            self.get_logger().error(
+                f"Expected an even-width mono SBS frame, got {cv_img.shape}")
+            return
         
         cv_img_small = cv2.resize(cv_img, (0, 0), fx=0.5, fy=0.5, interpolation=cv2.INTER_LINEAR)
         
@@ -76,11 +78,11 @@ class StereoSplitter(Node):
         # Use primitive assignments to prevent reference overwrites and save CPU
         left_msg.header.stamp.sec = msg.header.stamp.sec
         left_msg.header.stamp.nanosec = msg.header.stamp.nanosec
-        left_msg.header.frame_id = 'camera_left_frame'
+        left_msg.header.frame_id = 'camera_left_optical_frame'
         
         right_msg.header.stamp.sec = msg.header.stamp.sec
         right_msg.header.stamp.nanosec = msg.header.stamp.nanosec
-        right_msg.header.frame_id = 'camera_right_frame'
+        right_msg.header.frame_id = 'camera_right_optical_frame'
         
         self.info_left.header.stamp.sec = msg.header.stamp.sec
         self.info_left.header.stamp.nanosec = msg.header.stamp.nanosec

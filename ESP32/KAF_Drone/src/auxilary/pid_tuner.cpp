@@ -518,10 +518,12 @@ void pidtuner_step( void* imuData ) {
           DPRINTF( "[T] Exiting Physical PID Tuner\n" );
           kafenv.info.flightMode = CMD_NULL_MODE | NULL_MODE;
           pidtuner.tuningMode = TUNING_MODE_EXIT;
+          //Physical tuning exits fail closed. Selecting/preparing a landing path never grants authority to
+          //arm; a later explicit arm command must pass the normal commander guard.
           commander_setTrajectories( FLIGHTPATH_LAND, NULLPTR );
+          kafenv.info.actuation = false;
         }
       }
-      kafenv.info.actuation = true;
       break;
     }
     case TUNING_MODE_EXIT : {

@@ -33,7 +33,7 @@ from typing import Dict, Optional
 from mas_interfaces.msg import (
     PoseBeacon, TaskAnnounce, TaskResult, MineDelta
 )
-from std_msgs.msg import String
+from std_msgs.msg import Bool, String
 from nav_msgs.msg import OccupancyGrid
 from geometry_msgs.msg import PoseStamped
 
@@ -65,6 +65,7 @@ class MissionLogicNode(Node):
         self.declare_parameter("arena_height",      ARENA_HEIGHT)
         self.declare_parameter("role_coordinator_id", "d1")
         self.declare_parameter("pose_timeout_s",       3.0)
+        self.declare_parameter("require_flight_ready", False)
 
         self.drone_id        = self.get_parameter("drone_id").value
         mission_duration     = self.get_parameter("mission_duration").value
@@ -73,6 +74,9 @@ class MissionLogicNode(Node):
         arena_h              = self.get_parameter("arena_height").value
         self.role_coordinator_id = self.get_parameter("role_coordinator_id").value
         self.pose_timeout_s  = self.get_parameter("pose_timeout_s").value
+        self.require_flight_ready = bool(
+            self.get_parameter("require_flight_ready").value)
+        self.flight_ready = not self.require_flight_ready
 
         # Arena bounds (full arena for all drones; Kevin's A* handles exploration)
         self.arena_w = arena_w
@@ -154,6 +158,13 @@ class MissionLogicNode(Node):
             PoseStamped, f"/{self.drone_id}/pose",
             self._on_local_pose, 10)
 
+        # The physical one-drone launch enables this gate. A fresh telemetry
+        # pose alone must not start the mission clock before an operator has
+        # explicitly prepared and armed the vehicle.
+        self.create_subscription(
+            Bool, f"/{self.drone_id}/flight_ready",
+            self._on_flight_ready, 10)
+
         self.create_subscription(
             MineDelta, "/team/mine_delta",
             self._on_mine_delta, 20)
@@ -203,6 +214,9 @@ class MissionLogicNode(Node):
         self.own_x = msg.pose.position.x
         self.own_y = msg.pose.position.y
         self.own_pose_last_seen = time.monotonic()
+
+    def _on_flight_ready(self, msg: Bool):
+        self.flight_ready = bool(msg.data)
 
     def _on_task_announce(self, msg: TaskAnnounce):
         """Mirror the team task registry so all nodes can interpret results."""
@@ -264,6 +278,8 @@ class MissionLogicNode(Node):
 
     def _all_drones_ready(self) -> bool:
         """True only with a fresh local pose and all expected peer beacons."""
+        if self.require_flight_ready and not self.flight_ready:
+            return False
         now = time.monotonic()
         if (self.own_pose_last_seen is None or
                 now - self.own_pose_last_seen > self.pose_timeout_s):
@@ -295,6 +311,20 @@ class MissionLogicNode(Node):
     # ── Main tick ─────────────────────────────────────────────────────────────
 
     def _tick(self):
+        # In the physical launch, loss of an already-established flight-ready
+        # state is terminal for this mission instance. Never resume a partially
+        # executed plan after a transport, telemetry, land, or disarm event;
+        # recovery requires a fresh stack/preflight cycle.
+        if self.require_flight_ready and not self.flight_ready:
+            if self.sm.state not in ("BOOT", "FINISH"):
+                self.get_logger().error(
+                    f"[{self.drone_id}] flight_ready lost; terminating mission")
+                self.sm.abort()
+            self._publish_state()
+            if self.sm.state == "FINISH":
+                self._cmd_finish()
+            return
+
         # Prune drones not seen for > 5 s (dropout detection)
         now = time.monotonic()
         dropped = [did for did, t in self.team_last_seen.items()

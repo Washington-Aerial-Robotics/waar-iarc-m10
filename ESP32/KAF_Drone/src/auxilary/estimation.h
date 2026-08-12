@@ -36,6 +36,9 @@ struct sensors {
 
 peripheral estimation_reset();
 bool estimation_step( coordinate* estimate );
+//Rebases the barometric altitude to the same launch-local origin as GPS. A barometer is adopted only when
+//its current sample is fresh; otherwise estimation continues using GPS-relative Z until another origin latch.
+void estimation_latchLocalOrigin();
 //Latches the current validated GPS fix as the local metric-frame origin (x=y=z=0). Returns false (and does
 //not latch anything) if the current fix doesn't meet GPS_MIN_SATELLITES/GPS_MAX_HDOP/freshness - callers
 //(e.g. the qualification state machine, before allowing a launch command) must check this return value
@@ -45,3 +48,6 @@ bool gps_setOrigin();
 //single source of truth mode-entry guards and the qualification failure monitor should check before
 //trusting kafenv.state.x for autonomous position/trajectory control.
 bool estimation_positionValid();
+//True after a validated fix has been explicitly latched as the local-frame origin. Unlike
+//estimation_positionValid(), this does not imply that the latest fix is still fresh.
+bool estimation_originSet();

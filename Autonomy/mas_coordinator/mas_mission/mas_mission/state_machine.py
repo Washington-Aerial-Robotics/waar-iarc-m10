@@ -138,6 +138,10 @@ class StateMachine:
     def is_terminal(self) -> bool:
         return self.state == "FINISH"
 
+    def abort(self) -> None:
+        """Conservatively terminate the mission after a physical-stack fault."""
+        self._go("FINISH")
+
     def summary(self) -> str:
         return (f"[{self.drone_id}] state={self.state} "
                 f"({self.time_in_state():.1f}s in state)")

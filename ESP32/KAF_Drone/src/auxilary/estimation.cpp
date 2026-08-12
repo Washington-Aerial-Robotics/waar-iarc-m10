@@ -22,7 +22,10 @@ struct {
   coordinate gpsStd;
   //PUT ALL GLOBAL VARIABLES HERE
   coordinate lastGpsXY;   //last quality-gated GPS x/y (z unused), held across ticks until GPS_STALE_MS
-  float lastBaroZ;        //last computed barometric relative altitude, held across ticks until BARO_STALE_MS
+  float lastBaroZ;        //last altitude relative to calibration P0, held until BARO_STALE_MS
+  unsigned long lastBaroZMillis; //timestamp of the sample actually used to compute lastBaroZ
+  float baroOriginZ;      //lastBaroZ captured when the GPS/local origin was explicitly latched
+  bool baroOriginSet;     //true only when that capture used a fresh, finite barometer sample
 } estimation;
 
 //Standard barometric formula referenced to P0 (the ground-level pressure captured during calibration -
@@ -41,6 +44,22 @@ static void estimate_init() {
   //PUT INITIALIZATION CODE HERE
   estimation.lastGpsXY = { 0, 0, 0 };
   estimation.lastBaroZ = 0;
+  estimation.lastBaroZMillis = 0;
+  estimation.baroOriginZ = 0;
+  estimation.baroOriginSet = false;
+}
+
+void estimation_latchLocalOrigin() {
+  //Reset the held GPS correction too; otherwise the estimator could reapply a coordinate from the old
+  //origin on the tick between latching and receiving the next GGA sentence.
+  estimation.lastGpsXY = { 0, 0, 0 };
+  const unsigned long lastUpdate = estimation.lastBaroZMillis;
+  const bool freshBarometer = lastUpdate != 0 && ( millis() - lastUpdate ) <= BARO_STALE_MS
+      && isfinite( estimation.lastBaroZ );
+  estimation.baroOriginSet = freshBarometer;
+  estimation.baroOriginZ = freshBarometer ? estimation.lastBaroZ : 0;
+  DPRINTF( "[E] Local Altitude Origin: Barometer=%s, Offset=%.3f\n",
+      freshBarometer ? "latched" : "unavailable; using GPS Z", estimation.baroOriginZ );
 }
 
 //Combines the last quality-gated GPS x/y with the last valid barometric z. Deliberately simple: this is a
@@ -92,8 +111,14 @@ bool estimation_step( coordinate* estimate ) {
     return true;
   } else {
     if( sensor->baro.update ) {
-      estimation.lastBaroZ = baro2Altitude( flight_filterSensor( CALIB_BARO_T, sensor->baro.temperature ),
-          flight_filterSensor( CALIB_BARO_P, sensor->baro.pressure ), estimation.baroP0 );
+      const float filteredTemperature = flight_filterSensor( CALIB_BARO_T, sensor->baro.temperature );
+      const float filteredPressure = flight_filterSensor( CALIB_BARO_P, sensor->baro.pressure );
+      const float filteredAltitude = baro2Altitude( filteredTemperature, filteredPressure, estimation.baroP0 );
+      if( isfinite( filteredTemperature ) && isfinite( filteredPressure ) && filteredPressure > 0
+          && estimation.baroP0 > 0 && isfinite( filteredAltitude ) ) {
+        estimation.lastBaroZ = filteredAltitude;
+        estimation.lastBaroZMillis = sensor->baro.lastUpdateMillis;
+      }
       DPRINTF( "[E] Barometer Values P=%.3f, T=%.3f, H=%.3f, Z=%.3f\n",
           sensor->baro.pressure, sensor->baro.temperature, sensor->baro.humidity, estimation.lastBaroZ );
     }
@@ -111,8 +136,11 @@ bool estimation_step( coordinate* estimate ) {
     if( !estimation_positionValid() ) {
       return false;
     }
-    const bool haveBaro = ( millis() - sensor->baro.lastUpdateMillis ) <= BARO_STALE_MS;
-    *estimate = estimate_position( sensor, &FLIGHT_BUFFER, estimation.lastBaroZ, estimation.lastGpsXY, haveBaro );
+    const bool haveBaro = estimation.baroOriginSet && estimation.lastBaroZMillis != 0
+        && ( millis() - estimation.lastBaroZMillis ) <= BARO_STALE_MS
+        && isfinite( estimation.lastBaroZ );
+    const float localBaroZ = estimation.lastBaroZ - estimation.baroOriginZ;
+    *estimate = estimate_position( sensor, &FLIGHT_BUFFER, localBaroZ, estimation.lastGpsXY, haveBaro );
     return true;
   }
 }
@@ -121,4 +149,8 @@ bool estimation_positionValid() {
   return SENSOR_BUFFER.gps.originSet
       && SENSOR_BUFFER.gps.lastFixMillis != 0
       && ( millis() - SENSOR_BUFFER.gps.lastFixMillis ) <= GPS_STALE_MS;
+}
+
+bool estimation_originSet() {
+  return SENSOR_BUFFER.gps.originSet;
 }

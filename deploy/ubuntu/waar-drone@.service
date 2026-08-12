@@ -1,0 +1,32 @@
+[Unit]
+Description=WAAR one-drone autonomy stack (%i)
+Documentation=file:/usr/local/share/doc/waar-drone/README.md
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=120
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=%i
+SupplementaryGroups=video dialout
+EnvironmentFile=/etc/waar-drone/%i.env
+ExecStart=/usr/local/libexec/waar-drone/run_one_drone.sh
+Restart=on-failure
+RestartSec=5
+RestartPreventExitStatus=64
+KillSignal=SIGINT
+TimeoutStopSec=20
+SendSIGKILL=yes
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+UMask=0027
+LimitCORE=0
+
+[Install]
+WantedBy=multi-user.target

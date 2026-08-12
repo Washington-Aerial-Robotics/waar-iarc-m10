@@ -1,0 +1,13 @@
+# EXAMPLE ONLY. Do not install this file with placeholders present.
+#
+# Discover stable attributes first:
+#   udevadm info --attribute-walk --name=/dev/videoN
+#   udevadm info --attribute-walk --name=/dev/ttyUSBn
+#
+# Replace every REPLACE_* token with values from the exact device. A serial
+# number is preferred when the hardware exposes one. Avoid broad rules which
+# accidentally grant access to unrelated USB devices.
+
+SUBSYSTEM=="video4linux", ATTRS{idVendor}=="REPLACE_CAMERA_VENDOR", ATTRS{idProduct}=="REPLACE_CAMERA_PRODUCT", ATTRS{serial}=="REPLACE_CAMERA_SERIAL", SYMLINK+="waar/stereo_camera", GROUP="video", MODE="0660"
+
+SUBSYSTEM=="tty", ATTRS{idVendor}=="REPLACE_SERIAL_VENDOR", ATTRS{idProduct}=="REPLACE_SERIAL_PRODUCT", ATTRS{serial}=="REPLACE_SERIAL_SERIAL", SYMLINK+="waar/flight_serial", GROUP="dialout", MODE="0660"

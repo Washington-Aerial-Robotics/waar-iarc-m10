@@ -23,6 +23,9 @@ struct imu {//FLIGHT DATA
 };
 
 void flight_rotationMatrix( float matrix[9] );
+//Returns a normalized ROS-order quaternion [x,y,z,w] derived from the current rotation matrix. Returns
+//false and writes identity when the matrix is not finite/normalizable (for example before attitude init).
+bool flight_rotationQuaternion( float quaternion[4] );
 void* flight_positionEstimator( bool( *estimator )( coordinate* ) );
 float flight_calibrateSensor( const STDBYTE id, const float value );
 float flight_filterSensor( const STDBYTE id, const float value );

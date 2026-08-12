@@ -1,7 +1,11 @@
 import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument
+from launch.conditions import IfCondition
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 def generate_launch_description():
     pkg_share = get_package_share_directory('slam')
@@ -13,7 +17,42 @@ def generate_launch_description():
     with open(urdf_file, 'r') as infp:
         robot_desc = infp.read()
 
-    return LaunchDescription([
+    video_device = LaunchConfiguration('video_device')
+    serial_port = LaunchConfiguration('serial_port')
+    serial_baudrate = LaunchConfiguration('serial_baudrate')
+    image_width = LaunchConfiguration('image_width')
+    image_height = LaunchConfiguration('image_height')
+    framerate = LaunchConfiguration('framerate')
+    use_legacy_esp32_bridge = LaunchConfiguration('use_legacy_esp32_bridge')
+    enable_navsat = LaunchConfiguration('enable_navsat')
+
+    arguments = [
+        DeclareLaunchArgument('video_device', default_value='/dev/video0'),
+        DeclareLaunchArgument('serial_port', default_value='/dev/ttyUSB0'),
+        DeclareLaunchArgument('serial_baudrate', default_value='115200'),
+        DeclareLaunchArgument('image_width', default_value='2560'),
+        DeclareLaunchArgument('image_height', default_value='960'),
+        DeclareLaunchArgument('framerate', default_value='10.0'),
+        DeclareLaunchArgument(
+            'use_legacy_esp32_bridge',
+            default_value='false',
+            description=(
+                'Enable the deprecated six-value CSV serial bridge. Keep false '
+                'with current binary KAF firmware and drone_hardware_bridge.'
+            ),
+        ),
+        DeclareLaunchArgument(
+            'enable_navsat',
+            default_value='false',
+            description=(
+                'Enable navsat_transform and RTAB-Map GPS input only when a '
+                'real /gps/fix publisher is present. Current binary autonomy '
+                'telemetry provides local metric position, not latitude/longitude.'
+            ),
+        ),
+    ]
+
+    nodes = [
         # Robot State Publisher
         Node(
             package='robot_state_publisher',
@@ -30,11 +69,11 @@ def generate_launch_description():
             name='usb_cam',
             output='screen',
             parameters=[{
-                'video_device': '/dev/video0',
-                'image_width': 2560,
-                'image_height': 960,
+                'video_device': video_device,
+                'image_width': ParameterValue(image_width, value_type=int),
+                'image_height': ParameterValue(image_height, value_type=int),
                 'pixel_format': 'mjpeg2rgb',
-                'framerate': 10.0
+                'framerate': ParameterValue(framerate, value_type=float),
             }]
         ),
         
@@ -43,7 +82,11 @@ def generate_launch_description():
             executable='esp32_bridge',
             name='esp32_bridge',
             output='screen',
-            parameters=[{'port': '/dev/ttyUSB0', 'baudrate': 115200}]
+            condition=IfCondition(use_legacy_esp32_bridge),
+            parameters=[{
+                'port': serial_port,
+                'baudrate': ParameterValue(serial_baudrate, value_type=int),
+            }]
         ),
 
         Node(
@@ -93,6 +136,7 @@ def generate_launch_description():
             executable='navsat_transform_node',
             name='navsat_transform',
             output='screen',
+            condition=IfCondition(enable_navsat),
             parameters=[ekf_config],
             remappings=[
                 ('imu/data', '/imu/data'),
@@ -108,7 +152,7 @@ def generate_launch_description():
             output='screen',
             parameters=[{
                 'subscribe_stereo': True,
-                'subscribe_gps': True,
+                'subscribe_gps': ParameterValue(enable_navsat, value_type=bool),
                 'approx_sync': False,
                 'topic_queue_size': 20, 
                 'sync_queue_size': 20,  
@@ -142,8 +186,10 @@ def generate_launch_description():
                 'subscribe_stereo': True,
                 'approx_sync': False,
                 'topic_queue_size': 20, 
-                'sync_queue_size': 20,  
-                'Vis/MaxFeatures': '400'
+                'sync_queue_size': 20,
+                'Vis/MaxFeatures': '400',
+                # EKF is the sole odom -> base_link authority.
+                'publish_tf': False,
             }],
             remappings=[
                 ('left/image_rect', '/camera/left/image_rect'),
@@ -153,4 +199,5 @@ def generate_launch_description():
                 ('odom', '/stereo/odom')
             ]
         )
-    ])
+    ]
+    return LaunchDescription(arguments + nodes)

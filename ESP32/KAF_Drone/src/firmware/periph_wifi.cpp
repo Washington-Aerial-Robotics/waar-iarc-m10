@@ -1,6 +1,7 @@
 #include "../core/communication.h"
 #include "../core/firmware.h"
 #include "../auxilary/common_data.h"
+#include "../auxilary/commander.h"
 
 #if ALT_DEFINE
 #include "altdef.h"
@@ -11,6 +12,7 @@
 #endif
 
 #define WIFI_COM_METHOD 2
+#define WIFI_RX_CAPACITY 512
 
 extern COMS_BUFFERTYPE;
 
@@ -38,6 +40,8 @@ static struct {
   radio coms;
   WiFiServer server = WiFiServer( 70 );
   WiFiClient client;
+  unsigned short receiveLength;
+  unsigned char receiveBuffer[WIFI_RX_CAPACITY];
 } wifi;
 
 static void updateNetworkHash() {
@@ -51,15 +55,68 @@ static void updateNetworkHash() {
   DPRINTF( "[P] Wifi Updated Network Hash: Hash=%08x, Previous=%08x\n", wifi.p.networkHash, wifi.networkHash );
 }
 
-static unsigned short wifiReceiving() {
-  unsigned short length;
-  if( ( length = (unsigned char)wifi.client.available() ) > 0 ) {
-    wifi.client.setTimeout( 100 );
-    length = length < sizeof( COMS_BUFFER ) ? length : sizeof( COMS_BUFFER );
-    wifi.client.readBytes( COMS_BUFFER, length );
+static void wifiReadUpTo( const unsigned short targetLength ) {
+  const int available = wifi.client.available();
+  if( available <= 0 || wifi.receiveLength >= targetLength ) return;
+  unsigned short readLength = targetLength - wifi.receiveLength;
+  if( readLength > ( unsigned short )available ) readLength = ( unsigned short )available;
+  const size_t received = wifi.client.readBytes( ( char* )&wifi.receiveBuffer[wifi.receiveLength], readLength );
+  wifi.receiveLength += ( unsigned short )received;
+}
+
+//Returns zero for legacy/unframed commands. Autonomy requests have an exact size, so TCP fragmentation is
+//reassembled and coalesced data is not consumed past the current request. COM_SET_FLIGHTMODE carries its
+//own float count; the Pi is authorized only for count zero, but consuming the announced frame also keeps a
+//malformed request from desynchronizing the following header.
+static unsigned short wifiAutonomyFrameLength() {
+  if( wifi.receiveLength < sizeof( packet_header ) ) return sizeof( packet_header );
+  switch( wifi.receiveBuffer[2] ) {
+    case COM_SET_GPSORIGIN : case COM_REQUEST_TELEMETRY : return sizeof( packet_header );
+    case COM_SET_ACTUATION : case COM_SET_TRAJECTORY : return sizeof( packet_header ) + 1;
+    case COM_SET_TRAJSETPT : return sizeof( packet_header ) + sizeof( trajsetpoint );
+    case COM_SET_FLIGHTMODE : {
+      const unsigned short headerLength = sizeof( packet_header ) + 2;
+      if( wifi.receiveLength < headerLength ) return headerLength;
+      return headerLength + ( ( unsigned short )wifi.receiveBuffer[5] ) * sizeof( float );
+    }
+    default : return 0;
   }
-  DPRINTF( "[P] WiFi Received Message\n" );
-  return length;
+}
+
+static unsigned short wifiReceiving() {
+  wifi.client.setTimeout( 100 );
+  //Read only enough to identify a header first. This is what prevents a second coalesced autonomy request
+  //from being swallowed as payload for the first one.
+  wifiReadUpTo( sizeof( packet_header ) );
+  if( wifi.receiveLength < sizeof( packet_header ) ) return 0;
+
+  unsigned short frameLength = wifiAutonomyFrameLength();
+  if( frameLength != 0 ) {
+    if( frameLength > WIFI_RX_CAPACITY ) {
+      //Return the available prefix so the protocol layer emits COM_FAILURE for the impossible declared
+      //length, then reset instead of overflowing the accumulator.
+      frameLength = wifi.receiveLength;
+    } else {
+      wifiReadUpTo( frameLength );
+      frameLength = wifiAutonomyFrameLength(); //flight-mode size becomes known after its two-byte header
+      if( frameLength > WIFI_RX_CAPACITY ) frameLength = wifi.receiveLength;
+      if( wifi.receiveLength < frameLength ) {
+        wifiReadUpTo( frameLength );
+        if( wifi.receiveLength < frameLength ) return 0;
+      }
+    }
+  } else {
+    //Legacy compatibility: once a non-autonomy header is identified, preserve the old behavior of handing
+    //all currently available bytes to com_step(). Legacy TCP commands still require one-request-at-a-time
+    //pacing; the autonomy path above is the fragmentation-safe interface used by Ubuntu.
+    wifiReadUpTo( WIFI_RX_CAPACITY );
+    frameLength = wifi.receiveLength;
+  }
+
+  memcpy( COMS_BUFFER, wifi.receiveBuffer, frameLength );
+  wifi.receiveLength = 0;
+  DPRINTF( "[P] WiFi Received Complete Frame: Length=%u\n", frameLength );
+  return frameLength;
 }
 
 static void wifiSending( void* buffer, unsigned short len ) {
@@ -84,9 +141,12 @@ void peripheral_wifiNetwork( const bool rwflag, char* name, char* password, char
 void peripheral_wifiLoop() {
   if( wifi.networkHash != wifi.p.networkHash ) {
     WiFi.disconnect();
+    wifi.receiveLength = 0;
     DPRINTF( "[P] Attempting WiFi Connection: Network=%s, Password=%s\n", wifi.p.networkName, wifi.p.networkPassword );
     if( wifi.p.wifiSetAP ) {
-      WiFi.softAPConfig( IPAddress( 192, 168, 1, 240 ), IPAddress( 192, 168, 0, 1 ), IPAddress( 255, 255, 255, 0 ) );
+      //The AP itself is the gateway; both addresses must be in the configured /24 subnet. The former
+      //192.168.0.1 gateway with a 192.168.1.240 AP address caused clients to install an unusable route.
+      WiFi.softAPConfig( IPAddress( 192, 168, 1, 240 ), IPAddress( 192, 168, 1, 240 ), IPAddress( 255, 255, 255, 0 ) );
       WiFi.mode( WIFI_AP );
       WiFi.softAP( wifi.p.networkName, wifi.p.networkPassword[0] == '\0' ? NULL : wifi.p.networkPassword, 1, 0, 1 );
     } else {
@@ -116,12 +176,18 @@ void peripheral_wifiLoop() {
       lastWifiPrint = millis();
       DPRINTF( "[P] WiFi Active Step: IP=%s\n", wifi.p.networkAddress );
     }
-    if( wifi.client.connected() || ( wifi.client = wifi.server.accept() ).connected() ) {
+    if( !wifi.client.connected() ) {
+      //Discard an incomplete frame when the peer disconnects; a new client/session must begin at a header.
+      wifi.receiveLength = 0;
+      wifi.client = wifi.server.accept();
+    }
+    if( wifi.client.connected() ) {
       wifi.coms.currentTime = millis();
       com_step( &wifi.coms );
     }
   } else {
     wifi.wifiConnected = false;
+    wifi.receiveLength = 0;
   }
 }
 
@@ -141,6 +207,8 @@ void peripheral_wifiInit() {
   wifi.coms = { 0, WIFI_COM_METHOD, false, true, COMS_BUFFER, &wifiReceiving, &wifiSending, &wifiSending };
   wifi.networkHash = ~wifi.p.networkHash;
   wifi.wifiConnected = false;
+  wifi.receiveLength = 0;
+  memset( wifi.receiveBuffer, 0, sizeof( wifi.receiveBuffer ) );
   peripheral_wifiLoop();
   wifi.server.begin();
   com_receiveMessage( COM_REQUEST_WIFI, 0, []( void** response, const void* content, const unsigned short len ) {

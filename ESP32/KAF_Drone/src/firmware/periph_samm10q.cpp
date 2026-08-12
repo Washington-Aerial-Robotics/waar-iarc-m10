@@ -54,7 +54,8 @@ static bool isFixGoodQuality() {
 }
 
 bool gps_setOrigin() {
-  if( !isFixGoodQuality() || millis() - SENSOR_BUFFER.gps.lastFixMillis > GPS_STALE_MS ) {
+  if( !isFixGoodQuality() || SENSOR_BUFFER.gps.lastFixMillis == 0
+      || millis() - SENSOR_BUFFER.gps.lastFixMillis > GPS_STALE_MS ) {
     DPRINTF( "[P] GPS Origin Latch Rejected: Quality=%u, Sats=%u, HDOP=%.2f\n",
         SENSOR_BUFFER.gps.fixQuality, SENSOR_BUFFER.gps.satellites, SENSOR_BUFFER.gps.hdop );
     return false;
@@ -129,7 +130,7 @@ void peripheral_samm10qLoop() {
 }
 
 void peripheral_samm10qInit() {
-  firmware_registerPeripheral( { "samm10q", 0, sizeof( sam ), &sam, &peripheral_samm10qLoop, &peripheral_samm10qInit } );
+  firmware_registerPeripheral( { "samm10q", 0, sizeof( sam ), &sam, &peripheral_samm10qInit, &peripheral_samm10qLoop } );
   DPRINTF( "[P] Initializing SAMM10Q\n" );
   Serial1.begin( 9600, SERIAL_8N1, UART1RX, UART1TX );
   sam.dataLen = 0;

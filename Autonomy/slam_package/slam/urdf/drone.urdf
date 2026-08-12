@@ -6,18 +6,32 @@
 
   <!-- Left Camera -->
   <link name="camera_left_frame" />
+  <link name="camera_left_optical_frame" />
   <joint name="base_to_camera_left" type="fixed">
     <parent link="base_link"/>
     <child link="camera_left_frame"/>
-    <origin xyz="0 0.05 0" rpy="0 0 0"/>
+    <!-- Calibrated stereo baseline is 0.057963 m (Tx/fx in right.yaml). -->
+    <origin xyz="0 0.0289816 0" rpy="0 0 0"/>
+  </joint>
+  <joint name="camera_left_to_optical" type="fixed">
+    <parent link="camera_left_frame"/>
+    <child link="camera_left_optical_frame"/>
+    <!-- ROS camera optical frame: +x right, +y down, +z forward. -->
+    <origin xyz="0 0 0" rpy="-1.57079632679 0 -1.57079632679"/>
   </joint>
 
   <!-- Right Camera -->
   <link name="camera_right_frame" />
+  <link name="camera_right_optical_frame" />
   <joint name="base_to_camera_right" type="fixed">
     <parent link="base_link"/>
     <child link="camera_right_frame"/>
-    <origin xyz="0 -0.05 0" rpy="0 0 0"/>
+    <origin xyz="0 -0.0289816 0" rpy="0 0 0"/>
+  </joint>
+  <joint name="camera_right_to_optical" type="fixed">
+    <parent link="camera_right_frame"/>
+    <child link="camera_right_optical_frame"/>
+    <origin xyz="0 0 0" rpy="-1.57079632679 0 -1.57079632679"/>
   </joint>
 
   <!-- IMU -->

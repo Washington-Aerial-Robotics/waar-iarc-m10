@@ -161,6 +161,17 @@ class TestFinish:
         assert sm.state == "FINISH"
         assert sm.is_terminal() is True
 
+    @pytest.mark.parametrize(
+        "state", ["BOOT", "SURVEY", "VERIFY_TAG", "PATH_VERIFY", "CONVERGE"]
+    )
+    def test_abort_is_terminal_from_every_active_state(self, state):
+        sm = StateMachine("d1")
+        sm._go(state)
+        sm.abort()
+        assert sm.state == "FINISH"
+        sm.tick(make_ctx(all_drones_ready=True, time_remaining=420.0))
+        assert sm.state == "FINISH"
+
 
 # ── Transition callback ───────────────────────────────────────────────────────
 
