@@ -21,20 +21,37 @@ struct {
   float baroP0;
   coordinate gpsStd;
   //PUT ALL GLOBAL VARIABLES HERE
+  coordinate lastGpsXY;   //last quality-gated GPS x/y (z unused), held across ticks until GPS_STALE_MS
+  float lastBaroZ;        //last computed barometric relative altitude, held across ticks until BARO_STALE_MS
 } estimation;
 
+//Standard barometric formula referenced to P0 (the ground-level pressure captured during calibration -
+//see kafenv.cal.sensefilt[CALIB_BARO_P].ofst below), giving altitude in metres above that reference. This
+//is deliberately simple (no temperature-lapse-rate correction beyond T's role in flight_filterSensor's own
+//calibration) - adequate for a short (~1-2 minute) qualification flight at a stable ambient temperature,
+//not a general-purpose long-duration altimeter.
 static float baro2Altitude( const float T, const float P, const float P0 ) {
-  //PUT CONVERSION CODE HERE
-  return 0;
+  if( P <= 0 || P0 <= 0 ) {
+    return 0;
+  }
+  return 44330.0F * ( 1.0F - powf( P / P0, 1.0F / 5.255F ) );
 }
 
 static void estimate_init() {
   //PUT INITIALIZATION CODE HERE
+  estimation.lastGpsXY = { 0, 0, 0 };
+  estimation.lastBaroZ = 0;
 }
 
-static coordinate estimate_position( const sensors* sensor, const imu* imu, float baroZ, coordinate gps ) {
-  //PUT LOOP CODE HERE
-  return { 0, 0, 0 };
+//Combines the last quality-gated GPS x/y with the last valid barometric z. Deliberately simple: this is a
+//"most recent valid sample, held until stale" hold, not a Kalman/complementary fusion of GPS+baro+IMU by
+//itself - the actual GPS/IMU fusion (alpha-blending this correction against IMU-integrated dead-reckoning)
+//already happens one layer up, in flight.cpp's positionEstimate(), via kafenv.cal.positionalpha. Baro is
+//preferred for z over GPS's own altitude field because vertical GPS error is typically several times
+//larger than horizontal error, and this qualification test needs ~1m-scale altitude precision (20ft/6m
+//hold, 4 drones at the same nominal altitude).
+static coordinate estimate_position( const sensors* sensor, const imu* imu, float baroZ, coordinate gps, bool haveBaro ) {
+  return { gps.x, gps.y, haveBaro ? baroZ : gps.z };
 }
 
 //DO NOT MODIFY ANYTHING BELOW THIS LINE_________________________________________________________________________________
@@ -74,20 +91,34 @@ bool estimation_step( coordinate* estimate ) {
     }
     return true;
   } else {
-    float baroZ;
-    coordinate gps;
     if( sensor->baro.update ) {
-      baroZ = baro2Altitude( flight_filterSensor( CALIB_BARO_T, sensor->baro.temperature ),
+      estimation.lastBaroZ = baro2Altitude( flight_filterSensor( CALIB_BARO_T, sensor->baro.temperature ),
           flight_filterSensor( CALIB_BARO_P, sensor->baro.pressure ), estimation.baroP0 );
       DPRINTF( "[E] Barometer Values P=%.3f, T=%.3f, H=%.3f, Z=%.3f\n",
-          sensor->baro.pressure, sensor->baro.temperature, sensor->baro.humidity, baroZ );
+          sensor->baro.pressure, sensor->baro.temperature, sensor->baro.humidity, estimation.lastBaroZ );
     }
     if( sensor->gps.update ) {
-      gps = { flight_filterSensor( CALIB_GPS_X, sensor->gps.position.x ),
+      estimation.lastGpsXY = { flight_filterSensor( CALIB_GPS_X, sensor->gps.position.x ),
               flight_filterSensor( CALIB_GPS_Y, sensor->gps.position.y ),
               flight_filterSensor( CALIB_GPS_Z, sensor->gps.position.z ) };
     }
-    *estimate = estimate_position( sensor, &FLIGHT_BUFFER, baroZ, gps );
+    //Do NOT offer a correction built from a stale or never-set GPS fix - the caller (flight.cpp's
+    //positionEstimate()) treats a `false` return as "no correction this tick, keep dead-reckoning", which
+    //is the existing, already-safe fallback. Previously this branch unconditionally called
+    //estimate_position() and returned true even when sensor->gps.update was false, passing an
+    //uninitialized/stale local `gps` variable into position control - the exact "silently continue with
+    //bad coordinates" failure this replaces.
+    if( !estimation_positionValid() ) {
+      return false;
+    }
+    const bool haveBaro = ( millis() - sensor->baro.lastUpdateMillis ) <= BARO_STALE_MS;
+    *estimate = estimate_position( sensor, &FLIGHT_BUFFER, estimation.lastBaroZ, estimation.lastGpsXY, haveBaro );
     return true;
   }
+}
+
+bool estimation_positionValid() {
+  return SENSOR_BUFFER.gps.originSet
+      && SENSOR_BUFFER.gps.lastFixMillis != 0
+      && ( millis() - SENSOR_BUFFER.gps.lastFixMillis ) <= GPS_STALE_MS;
 }
