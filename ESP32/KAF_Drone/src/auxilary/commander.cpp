@@ -238,6 +238,12 @@ void commander_qualificationCommand( STDBYTE cmd ) {
         DPRINTF( "[H] Qualification: LAUNCH rejected, qualState=%u (expected QUAL_BOOT)\n", kafenv.info.qualState );
         return;
       }
+      //Latches the current GPS fix as this launch's local-frame origin. Safe to call every LAUNCH attempt:
+      //if the current fix isn't good enough, gps_setOrigin() leaves any previously-latched origin alone
+      //and returns false, rather than clearing it - so this doesn't fail forward. Without this call
+      //nothing in the firmware ever set originSet, so estimation_positionValid() (which checks it) was
+      //always false and LAUNCH could never succeed.
+      gps_setOrigin();
       if( !estimation_positionValid() ) {
         DPRINTF( "[H] Qualification: LAUNCH rejected, no valid position estimate\n" );
         return;
