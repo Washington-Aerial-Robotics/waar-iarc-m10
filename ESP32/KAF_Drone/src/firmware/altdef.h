@@ -10,12 +10,14 @@ struct {
 #define NAN 0.0F
 #define isfinite( N ) true
 double cos ( double num );
+static float powf( float base, float exponent );
 static long strtol( const char* str, char** str_end, int base );
 static float strtof ( const char* str, char** str_end );
 static double strtod ( const char* str, char** str_end );
 static void* memset( void* dest, int ch, size_t count );
 static void* memcpy( void* dest, const void* src, size_t count );
 static int memcmp( const void* lhs, const void* rhs, size_t count );
+static size_t strlen( const char* str );
 static int rand();
 #define delay( A )
 #define millis() 0

@@ -24,6 +24,7 @@ void peripheral_bme280Loop() {
     SENSOR_BUFFER.baro.pressure    = bme.mySensor.readFloatPressure();
     SENSOR_BUFFER.baro.temperature = bme.mySensor.readTempC();
     SENSOR_BUFFER.baro.update      = true;
+    SENSOR_BUFFER.baro.lastUpdateMillis = millis();
     DPRINTF( "[P] Barometer Data: Pressure=%f, Temperature=%f, Humidity=%f\n", 
         SENSOR_BUFFER.baro.pressure, SENSOR_BUFFER.baro.temperature, SENSOR_BUFFER.baro.humidity );
   } else {
