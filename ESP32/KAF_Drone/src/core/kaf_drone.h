@@ -106,6 +106,8 @@ struct drone_state {
                                 //here (piggybacking the existing COM_REQUEST_INFO telemetry) purely for
                                 //ground-station display, not read by any control logic.
     unsigned char qualRevolutions; //Completed orbit revolutions this Qualification run - telemetry only.
+    STDBYTE squareState;        //SQUARE_* (commander.h) - current Square Test state, telemetry only, same
+                                //piggyback-on-COM_REQUEST_INFO pattern as qualState.
   } info;
   struct stateestimate {       //STATE ESTIMATION
     coordinate x;              //Position in m in the world frame

@@ -41,11 +41,13 @@ class DroneComms {
   static const int comSetAutonomyMode = 0x40 | 36;
   static const int comSetFormationSlot = 0x40 | 37;
   static const int comSetQualCommand = 0x40 | 38;
+  static const int comSetSquareCommand = 0x40 | 39;
 
   // kafenv.info.autonomyMode values (commander.h) - orthogonal to flightMode.
   static const int autonomyManual = 0;
   static const int autonomyQualification = 1;
   static const int autonomyMineSearch = 2;
+  static const int autonomySquareTest = 3;
 
   // QUALCMD_* (commander.h) - COM_SET_QUALCOMMAND payload values.
   static const int qualCmdLaunch = 1;
@@ -62,6 +64,21 @@ class DroneComms {
   static const int qualStatePostOrbitHold = 4;
   static const int qualStateLanding = 5;
   static const int qualStateFinish = 6;
+
+  // SQUARECMD_* (commander.h) - COM_SET_SQUARECOMMAND payload values.
+  static const int squareCmdStart = 1;
+  static const int squareCmdLand = 2;
+  static const int squareCmdAbort = 3;
+
+  // SQUARE_* (commander.h) - kafenv.info.squareState values, for display.
+  static const int squareStateBoot = 0;
+  static const int squareStateClimb = 1;
+  static const int squareStateLeg1 = 2;
+  static const int squareStateLeg2 = 3;
+  static const int squareStateLeg3 = 4;
+  static const int squareStateLeg4 = 5;
+  static const int squareStateLanding = 6;
+  static const int squareStateFinish = 7;
 
   // Maps to COM_REQUEST_STATE / COM_REPLY_STATE — the "dronestate" reply,
   // which carries position + flight status. There is no dedicated
@@ -255,6 +272,21 @@ class DronePacketBuilder {
     );
   }
 
+  /// Builds a COM_SET_SQUARECOMMAND packet (DroneComms.squareCmd*). Only
+  /// acted on while autonomyMode == autonomySquareTest.
+  Uint8List squareCommand({
+    required int command,
+    int? toId,
+    int? messageId,
+  }) {
+    return singleByte(
+      messageType: DroneComms.comSetSquareCommand,
+      value: command,
+      toId: toId,
+      messageId: messageId,
+    );
+  }
+
   Uint8List singleByte({
     required int messageType,
     required int value,
@@ -365,6 +397,7 @@ class DroneTelemetry {
     this.formationSlot,
     this.qualState,
     this.qualRevolutions,
+    this.squareState,
   });
 
   final Coordinate3? position;
@@ -394,6 +427,9 @@ class DroneTelemetry {
   // autonomyMode == QUALIFICATION.
   final int? qualState;
   final int? qualRevolutions;
+  // SQUARE_BOOT..SQUARE_FINISH (see commander.h) - only meaningful when
+  // autonomyMode == SQUARE_TEST.
+  final int? squareState;
 
   /// Returns a copy with any non-null fields from [update] overlaid on top
   /// of this telemetry, so partial replies (e.g. position-only) don't wipe
@@ -413,6 +449,7 @@ class DroneTelemetry {
       formationSlot: update.formationSlot ?? formationSlot,
       qualState: update.qualState ?? qualState,
       qualRevolutions: update.qualRevolutions ?? qualRevolutions,
+      squareState: update.squareState ?? squareState,
     );
   }
 
@@ -445,13 +482,13 @@ class DroneTelemetry {
   }
 
   /// Decodes a COM_REPLY_INFO payload ("droneinfo"): identification,
-  /// firmware version, battery, and autonomy/qualification status. Wire
-  /// layout: [deviceID,flightMode,triggerLock,actuation: uint8 x4]
-  /// [version: uint32][battery: float32]
-  /// [autonomyMode,formationSlot,qualState,qualRevolutions: uint8 x4]
-  /// = 16 bytes. The last 4 bytes are read defensively (payload.length
-  /// check) so this keeps working against older firmware that only sends
-  /// the first 12.
+  /// firmware version, battery, and autonomy/qualification/square-test
+  /// status. Wire layout: [deviceID,flightMode,triggerLock,actuation:
+  /// uint8 x4][version: uint32][battery: float32][autonomyMode,
+  /// formationSlot,qualState,qualRevolutions,squareState: uint8 x5] = 17
+  /// bytes. Bytes past the first 12 are read defensively (payload.length
+  /// checks) so this keeps working against older firmware that sends
+  /// fewer of them.
   static DroneTelemetry? fromInfoReply(Uint8List payload) {
     if (payload.length < 12) return null;
 
@@ -466,6 +503,7 @@ class DroneTelemetry {
       formationSlot: payload.length >= 14 ? payload[13] : null,
       qualState: payload.length >= 15 ? payload[14] : null,
       qualRevolutions: payload.length >= 16 ? payload[15] : null,
+      squareState: payload.length >= 17 ? payload[16] : null,
     );
   }
 

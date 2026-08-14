@@ -68,6 +68,15 @@ static struct {
 
 #define QUAL_TWO_PI 6.28318530718F
 
+//Square Test state machine bookkeeping - internal, not persisted. kafenv.info.squareState is the externally-
+//visible subset (telemetry only). x/y targets are in the GPS-relative local frame latched by gps_setOrigin()
+//at START; z is SQUARE_ALTITUDE_M throughout (BME-derived, via the shared estimator - see estimation.cpp).
+static struct {
+  float targetX, targetY, targetZ;      //current leg's destination in the local frame
+  unsigned long positionGoodSinceMillis; //0 = not currently within SQUARE_POSITION_TOLERANCE_M of the target
+  unsigned long legStartMillis;          //millis() the current leg/climb began - baseline for SQUARE_LEG_TIMEOUT_MS
+} square;
+
 struct startupcommand {
   unsigned char index;
   commanding::storage::startupcmd content;
@@ -364,6 +373,149 @@ static void commander_qualificationStep( const unsigned long currentTime ) {
   }
 }
 
+//Starts (or fast-forwards to landing from) a Square Test leg by directly issuing FLIGHTPATH_LAND -
+//shared by commander_squareCommand()'s LAND/ABORT priority handling.
+static void squareBeginLanding() {
+  kafenv.info.triggerLock = 1;
+  FLTSYNC;
+  kafenv.info.flightMode = CMD_NOMINAL_MODE | TRAJECTORY_MODE;
+  kafenv.info.actuation = true;
+  commander_setTrajectories( FLIGHTPATH_LAND, NULLPTR );
+  kafenv.info.triggerLock = 0;
+  kafenv.info.squareState = SQUARE_LANDING;
+}
+
+//Discrete, phone-issued transitions of the Square Test state machine - same com_task-only-caller reasoning
+//as commander_qualificationCommand() above, no cross-core race with commander_squareStep() below.
+void commander_squareCommand( STDBYTE cmd ) {
+  if( kafenv.info.autonomyMode != AUTONOMY_SQUARE_TEST ) {
+    DPRINTF( "[H] Square Command Ignored: autonomyMode is not AUTONOMY_SQUARE_TEST\n" );
+    return;
+  }
+  //LAND/ABORT have priority - accepted from any in-progress state.
+  if( ( cmd == SQUARECMD_LAND || cmd == SQUARECMD_ABORT ) && kafenv.info.squareState != SQUARE_LANDING && kafenv.info.squareState != SQUARE_FINISH ) {
+    DPRINTF( "[H] Square: %s commanded from state %u\n", cmd == SQUARECMD_ABORT ? "ABORT" : "LAND", kafenv.info.squareState );
+    squareBeginLanding();
+    return;
+  }
+  if( cmd == SQUARECMD_START ) {
+    if( kafenv.info.squareState != SQUARE_BOOT ) {
+      DPRINTF( "[H] Square: START rejected, squareState=%u (expected SQUARE_BOOT)\n", kafenv.info.squareState );
+      return;
+    }
+    //Same reasoning as QUALCMD_LAUNCH: latches the current GPS fix as this run's local-frame origin -
+    //without this, estimation_positionValid() would never become true and START could never succeed.
+    gps_setOrigin();
+    if( !estimation_positionValid() ) {
+      DPRINTF( "[H] Square: START rejected, no valid position estimate\n" );
+      return;
+    }
+    DPRINTF( "[H] Square: START\n" );
+    kafenv.info.triggerLock = 1;
+    FLTSYNC;
+    kafenv.info.flightMode = CMD_NOMINAL_MODE | TRAJECTORY_MODE;
+    kafenv.info.actuation = true;
+    const float args[4] = { SQUARE_ALTITUDE_M, 0.9F, 0, 0 };
+    commander_setTrajectories( FLIGHTPATH_LAUNCH, args );
+    kafenv.info.triggerLock = 0;
+    kafenv.info.squareState = SQUARE_CLIMB;
+    square.positionGoodSinceMillis = 0;
+    square.legStartMillis = millis();
+  } else {
+    DPRINTF( "[H] Square: Unknown command %u\n", cmd );
+  }
+}
+
+//Advances to the next leg (or landing, after LEG4) with a fresh FLIGHTPATH_GLIDEPOINT target.
+static void squareAdvanceLeg( STDBYTE nextState, float x, float y, float z, const unsigned long currentTime ) {
+  square.targetX = x;
+  square.targetY = y;
+  square.targetZ = z;
+  square.positionGoodSinceMillis = 0;
+  square.legStartMillis = currentTime;
+  kafenv.info.squareState = nextState;
+  const float args[4] = { SQUARE_GLIDE_VELOCITY_M_S, x, y, z };
+  kafenv.info.triggerLock = 1;
+  FLTSYNC;
+  commander_setTrajectories( FLIGHTPATH_GLIDEPOINT, args );
+  kafenv.info.triggerLock = 0;
+  DPRINTF( "[H] Square: Advancing to state %u, target=[ %.2f, %.2f, %.2f ]\n", nextState, x, y, z );
+}
+
+//Time-driven Square Test progression - called every commander_step() tick regardless of mode; no-ops
+//immediately if not in Square Test mode. Mirrors commander_qualificationStep()'s structure.
+static void commander_squareStep( const unsigned long currentTime ) {
+  if( kafenv.info.autonomyMode != AUTONOMY_SQUARE_TEST ) {
+    return;
+  }
+  const float S = SQUARE_SIDE_LENGTH_M;
+
+  if( kafenv.info.squareState == SQUARE_LANDING ) {
+    if( kafenv.state.x.z < 0.1F ) {
+      kafenv.info.actuation = false;
+      kafenv.info.flightMode = CMD_IDLE_MODE | ( DEFAULT_MODES_MASK & kafenv.info.flightMode );
+      kafenv.info.squareState = SQUARE_FINISH;
+      DPRINTF( "[H] Square: Landed, FINISH\n" );
+    }
+    return;
+  }
+  if( kafenv.info.squareState != SQUARE_CLIMB && kafenv.info.squareState != SQUARE_LEG1 &&
+      kafenv.info.squareState != SQUARE_LEG2 && kafenv.info.squareState != SQUARE_LEG3 && kafenv.info.squareState != SQUARE_LEG4 ) {
+    return; //SQUARE_BOOT/SQUARE_FINISH - nothing time-driven to do
+  }
+
+  //Safety: land rather than hold forever if a leg doesn't complete in time (bad tuning, GPS drift,
+  //physical obstruction) - see SQUARE_LEG_TIMEOUT_MS's comment in commander.h.
+  if( currentTime - square.legStartMillis >= SQUARE_LEG_TIMEOUT_MS ) {
+    DPRINTF( "[H] Square: Leg timed out in state %u, landing\n", kafenv.info.squareState );
+    squareBeginLanding();
+    return;
+  }
+
+  if( kafenv.info.squareState == SQUARE_CLIMB ) {
+    const float altError = kafenv.state.x.z - SQUARE_ALTITUDE_M;
+    const bool withinTolerance = ( altError < QUAL_ALTITUDE_TOLERANCE_M ) && ( altError > -QUAL_ALTITUDE_TOLERANCE_M );
+    if( !withinTolerance ) {
+      square.positionGoodSinceMillis = 0;
+    } else if( square.positionGoodSinceMillis == 0 ) {
+      square.positionGoodSinceMillis = currentTime;
+    } else if( currentTime - square.positionGoodSinceMillis >= QUAL_ALTITUDE_DWELL_MS ) {
+      DPRINTF( "[H] Square: Formation altitude reached (%.2fm)\n", kafenv.state.x.z );
+      squareAdvanceLeg( SQUARE_LEG1, S, 0, SQUARE_ALTITUDE_M, currentTime );
+    }
+    return;
+  }
+
+  //SQUARE_LEG1..LEG4: check 3D distance to the current leg's target.
+  const float dx = kafenv.state.x.x - square.targetX;
+  const float dy = kafenv.state.x.y - square.targetY;
+  const float dz = kafenv.state.x.z - square.targetZ;
+  const bool arrived = ( dx * dx + dy * dy + dz * dz ) < ( SQUARE_POSITION_TOLERANCE_M * SQUARE_POSITION_TOLERANCE_M );
+  if( !arrived ) {
+    square.positionGoodSinceMillis = 0;
+    return;
+  }
+  if( square.positionGoodSinceMillis == 0 ) {
+    square.positionGoodSinceMillis = currentTime;
+    return;
+  }
+  if( currentTime - square.positionGoodSinceMillis < SQUARE_POSITION_DWELL_MS ) {
+    return;
+  }
+
+  switch( kafenv.info.squareState ) {
+    case SQUARE_LEG1 : squareAdvanceLeg( SQUARE_LEG2, S, S, SQUARE_ALTITUDE_M, currentTime ); break;
+    case SQUARE_LEG2 : squareAdvanceLeg( SQUARE_LEG3, 0, S, SQUARE_ALTITUDE_M, currentTime ); break;
+    case SQUARE_LEG3 : squareAdvanceLeg( SQUARE_LEG4, 0, 0, SQUARE_ALTITUDE_M, currentTime ); break;
+    case SQUARE_LEG4 : {
+      DPRINTF( "[H] Square: Back at origin, landing\n" );
+      squareBeginLanding();
+      break;
+    }
+    default : { }
+  }
+}
+
 peripheral commander_reset() {
   DPRINTF( "[H] Resetting Commander\n" );
   commander.doReadStorage = true;
@@ -475,7 +627,7 @@ peripheral commander_reset() {
       DPRINTF( "[H] Rejected Set Autonomy Mode: Already armed\n" );
       return;
     }
-    if( mode != AUTONOMY_MANUAL && mode != AUTONOMY_QUALIFICATION && mode != AUTONOMY_MINE_SEARCH ) {
+    if( mode != AUTONOMY_MANUAL && mode != AUTONOMY_QUALIFICATION && mode != AUTONOMY_MINE_SEARCH && mode != AUTONOMY_SQUARE_TEST ) {
       DPRINTF( "[H] Rejected Set Autonomy Mode: Unknown mode %u\n", mode );
       return;
     }
@@ -484,6 +636,8 @@ peripheral commander_reset() {
     if( mode == AUTONOMY_QUALIFICATION ) {
       kafenv.info.qualState = QUAL_BOOT;
       kafenv.info.qualRevolutions = 0;
+    } else if( mode == AUTONOMY_SQUARE_TEST ) {
+      kafenv.info.squareState = SQUARE_BOOT;
     }
   } );
   //Phone-set formation slot (0-3) - which position along the hover line / orbit phase-stagger this drone
@@ -509,6 +663,12 @@ peripheral commander_reset() {
     return ( unsigned short )0;
   }, []( const void* content, const packet_header header ) {
     commander_qualificationCommand( *( const STDBYTE* )content );
+  } );
+  //High-level Square Test command (SQUARECMD_*) - see commander_squareCommand().
+  com_receiveMessage( COM_SET_SQUARECOMMAND, sizeof( STDBYTE ), []( void** response, const void* content, const unsigned short len ) {
+    return ( unsigned short )0;
+  }, []( const void* content, const packet_header header ) {
+    commander_squareCommand( *( const STDBYTE* )content );
   } );
   return { "commander", sizeof( commander.store ), sizeof( commander ), &commander, [](){ commander_reset(); }, NULLPTR };
 }
@@ -583,12 +743,22 @@ void commander_step( const unsigned long currentTime ) {
       if( !estimation_positionValid() || setpointStale ) {
         DPRINTF( "[H] Position/Setpoint Invalid During Autonomous Flight, Initiating Landing: "
             "PositionValid=%u, SetpointStale=%u, Time=%lu\n", estimation_positionValid(), setpointStale, currentTime );
-        kafenv.info.triggerLock = 1;
-        FLTSYNC;
-        kafenv.info.flightMode = CMD_DESCENT_MODE | NULL_MODE;
-        commander_setTrajectories( FLIGHTPATH_LAND, NULLPTR );
-        kafenv.info.triggerLock = 0;
-        kafenv.info.qualState = QUAL_LANDING;
+        //Reuses each mode's own LAND command rather than a third copy of landing logic - this used to
+        //hardcode kafenv.info.qualState = QUAL_LANDING unconditionally (via a CMD_DESCENT_MODE path
+        //distinct from qualification/square's own CMD_NOMINAL_MODE|TRAJECTORY_MODE LAND), which left
+        //squareState untouched and stale during a Square Test failsafe, and didn't match either state
+        //machine's own idea of what "landing" looks like.
+        if( kafenv.info.autonomyMode == AUTONOMY_QUALIFICATION ) {
+          commander_qualificationCommand( QUALCMD_LAND );
+        } else if( kafenv.info.autonomyMode == AUTONOMY_SQUARE_TEST ) {
+          commander_squareCommand( SQUARECMD_LAND );
+        } else {
+          kafenv.info.triggerLock = 1;
+          FLTSYNC;
+          kafenv.info.flightMode = CMD_DESCENT_MODE | NULL_MODE;
+          commander_setTrajectories( FLIGHTPATH_LAND, NULLPTR );
+          kafenv.info.triggerLock = 0;
+        }
       }
     }
   }
@@ -603,5 +773,6 @@ void commander_step( const unsigned long currentTime ) {
     }
   }
   commander_qualificationStep( currentTime );
+  commander_squareStep( currentTime );
   commander.lastTime = currentTime;
 }

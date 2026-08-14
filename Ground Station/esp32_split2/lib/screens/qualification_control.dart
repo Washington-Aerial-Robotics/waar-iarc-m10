@@ -18,6 +18,7 @@ class QualificationControl extends StatelessWidget {
     (DroneComms.autonomyManual, 'Manual', Icons.sports_esports),
     (DroneComms.autonomyQualification, 'Qualification', Icons.flight_takeoff),
     (DroneComms.autonomyMineSearch, 'Mine Search', Icons.travel_explore),
+    (DroneComms.autonomySquareTest, 'Square Test', Icons.crop_square),
   ];
 
   static const _qualStateLabels = {
@@ -28,6 +29,17 @@ class QualificationControl extends StatelessWidget {
     DroneComms.qualStatePostOrbitHold: 'POST-ORBIT HOLD - waiting for land',
     DroneComms.qualStateLanding: 'LANDING',
     DroneComms.qualStateFinish: 'FINISHED - landed',
+  };
+
+  static const _squareStateLabels = {
+    DroneComms.squareStateBoot: 'BOOT - waiting for start',
+    DroneComms.squareStateClimb: 'CLIMB',
+    DroneComms.squareStateLeg1: 'LEG 1',
+    DroneComms.squareStateLeg2: 'LEG 2',
+    DroneComms.squareStateLeg3: 'LEG 3',
+    DroneComms.squareStateLeg4: 'LEG 4 - returning to origin',
+    DroneComms.squareStateLanding: 'LANDING',
+    DroneComms.squareStateFinish: 'FINISHED - landed',
   };
 
   @override
@@ -72,6 +84,8 @@ class QualificationControl extends StatelessWidget {
             const Divider(height: 32),
             if (autonomyMode == DroneComms.autonomyQualification) ...[
               _QualificationPanel(ctrl: ctrl, armed: armed),
+            ] else if (autonomyMode == DroneComms.autonomySquareTest) ...[
+              _SquareTestPanel(ctrl: ctrl, armed: armed),
             ] else if (autonomyMode == DroneComms.autonomyMineSearch) ...[
               const Text('Mine Search mode selected. Onboard survey/mapping '
                   'behavior is not implemented yet - this mode currently '
@@ -191,6 +205,88 @@ class _QualificationPanel extends StatelessWidget {
           label: const Text('ABORT'),
           onPressed: canLandOrAbort
               ? () => ctrl.sendQualCommand(DroneComms.qualCmdAbort)
+              : null,
+        ),
+      ],
+    );
+  }
+}
+
+/// GPS+BME position-hold validation maneuver (fly a 4-corner square and
+/// return to the launch point) - a simpler pattern than the rules-mandated
+/// circular orbit, meant for exercising GPS x/y + BME z position control
+/// before ever attempting Qualification's real orbit. Not part of the
+/// competition itself.
+class _SquareTestPanel extends StatelessWidget {
+  const _SquareTestPanel({required this.ctrl, required this.armed});
+
+  final DroneController ctrl;
+  final bool armed;
+
+  @override
+  Widget build(BuildContext context) {
+    final telemetry = ctrl.telemetry;
+    final squareState = telemetry.squareState ?? DroneComms.squareStateBoot;
+    final stateLabel = QualificationControl._squareStateLabels[squareState] ??
+        'Unknown ($squareState)';
+
+    final canStart = squareState == DroneComms.squareStateBoot;
+    final canLandOrAbort = squareState != DroneComms.squareStateLanding &&
+        squareState != DroneComms.squareStateFinish;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Status', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 8),
+                Text('State: $stateLabel'),
+                if (telemetry.position != null) ...[
+                  Text(
+                    'Position: (${telemetry.position!.x.toStringAsFixed(2)}, '
+                    '${telemetry.position!.y.toStringAsFixed(2)}) m',
+                  ),
+                  Text(
+                    'Altitude: ${telemetry.position!.z.toStringAsFixed(2)} m',
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 24),
+        Text('Commands', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 8),
+        FilledButton.icon(
+          icon: const Icon(Icons.flight_takeoff),
+          label: const Text('START'),
+          onPressed: canStart
+              ? () => ctrl.sendSquareCommand(DroneComms.squareCmdStart)
+              : null,
+        ),
+        const SizedBox(height: 16),
+        // LAND/ABORT have priority over START on the firmware side, same
+        // reasoning as the Qualification panel above.
+        FilledButton.icon(
+          style: FilledButton.styleFrom(backgroundColor: Colors.orange),
+          icon: const Icon(Icons.flight_land),
+          label: const Text('LAND'),
+          onPressed: canLandOrAbort
+              ? () => ctrl.sendSquareCommand(DroneComms.squareCmdLand)
+              : null,
+        ),
+        const SizedBox(height: 8),
+        FilledButton.icon(
+          style: FilledButton.styleFrom(backgroundColor: Colors.red),
+          icon: const Icon(Icons.warning),
+          label: const Text('ABORT'),
+          onPressed: canLandOrAbort
+              ? () => ctrl.sendSquareCommand(DroneComms.squareCmdAbort)
               : null,
         ),
       ],

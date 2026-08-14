@@ -399,6 +399,20 @@ class DroneController extends ChangeNotifier {
     _pushLog('Sent qualification command: $command');
   }
 
+  /// Sends a high-level Square Test command (DroneComms.squareCmd*). Only
+  /// acted on by the firmware while autonomyMode == autonomySquareTest.
+  void sendSquareCommand(int command) {
+    if (!client.isConnected) {
+      _pushLog('Cannot send square test command: not connected');
+      return;
+    }
+    client.sendBytes(_packetBuilder.squareCommand(
+      command: command,
+      toId: _targetDroneId,
+    ));
+    _pushLog('Sent square test command: $command');
+  }
+
   void startControlLoop() {
     if (!client.isConnected) {
       _pushLog('Cannot start control loop: not connected');
