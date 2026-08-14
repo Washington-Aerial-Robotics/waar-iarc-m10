@@ -24,6 +24,10 @@
 #define AUTONOMY_MANUAL        0
 #define AUTONOMY_QUALIFICATION 1
 #define AUTONOMY_MINE_SEARCH   2
+#define AUTONOMY_SQUARE_TEST   3 //GPS+BME position-hold validation maneuver - NOT part of the rules-mandated
+                                  //qualification behavior (which requires a circle, not a square) - a
+                                  //separate, simpler pattern for exercising GPS x/y + BME z position control
+                                  //before ever attempting the real orbit.
 
 //kafenv.info.qualState - Qualification state machine states (commander.cpp's commander_qualificationStep()).
 //Runs entirely onboard the ESP32: launch/hover/orbit/hold/land all reuse the existing FLIGHTPATH_* trajectory
@@ -60,8 +64,36 @@
 #define QUAL_ALTITUDE_TOLERANCE_M 0.3F
 #define QUAL_ALTITUDE_DWELL_MS    1000UL //time within tolerance before CLIMB_TO_FORMATION is considered done
 
+//kafenv.info.squareState - Square Test state machine (commander.cpp's commander_squareStep()). x/y come
+//from GPS (via kafenv.state.x, fed by estimate_position() - see estimation.cpp), z from BME280 (same
+//estimator, preferred over GPS's own noisier altitude). Entirely onboard, same reasoning as Qualification.
+#define SQUARE_BOOT      0 //waiting for a valid position estimate before START is accepted
+#define SQUARE_CLIMB     1 //FLIGHTPATH_LAUNCH in progress, climbing to SQUARE_ALTITUDE_M
+#define SQUARE_LEG1      2 //FLIGHTPATH_GLIDEPOINT to corner (S, 0)
+#define SQUARE_LEG2      3 //FLIGHTPATH_GLIDEPOINT to corner (S, S)
+#define SQUARE_LEG3      4 //FLIGHTPATH_GLIDEPOINT to corner (0, S)
+#define SQUARE_LEG4      5 //FLIGHTPATH_GLIDEPOINT back to the launch origin (0, 0)
+#define SQUARE_LANDING   6 //FLIGHTPATH_LAND in progress
+#define SQUARE_FINISH    7 //landed, actuation disabled - terminal
+
+//High-level commands accepted only while autonomyMode == AUTONOMY_SQUARE_TEST.
+#define SQUARECMD_START  1
+#define SQUARECMD_LAND   2 //higher priority than START - accepted from any in-progress SQUARE_* state
+#define SQUARECMD_ABORT  3 //same priority as SQUARECMD_LAND, immediate FLIGHTPATH_LAND
+
+#define SQUARE_ALTITUDE_M          6.0F  //20ft, same rounding convention as QUAL_HOVER_ALTITUDE_M
+#define SQUARE_SIDE_LENGTH_M       5.0F  //adjust to taste - keep well within your test area's GPS-clear space
+#define SQUARE_GLIDE_VELOCITY_M_S  1.0F  //conservative first-attempt speed
+#define SQUARE_POSITION_TOLERANCE_M 0.5F
+#define SQUARE_POSITION_DWELL_MS  500UL  //time within tolerance before a leg/climb is considered arrived
+#define SQUARE_LEG_TIMEOUT_MS     30000UL //safety: if a leg doesn't complete in this long (bad tuning, GPS
+                                           //drift, physical obstruction), land rather than hold forever -
+                                           //a gap the current Qualification CLIMB_TO_FORMATION state does
+                                           //NOT yet have; worth retrofitting there too, not done here.
+
 void commander_setTrajectories( STDBYTE mode, const float args[4] );
 void commander_qualificationCommand( STDBYTE cmd );
+void commander_squareCommand( STDBYTE cmd );
 
 peripheral commander_reset();
 void commander_step( const unsigned long currentTime );
