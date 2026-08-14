@@ -54,6 +54,7 @@ class DroneController extends ChangeNotifier {
   Timer? _txTimer;
   Timer? _voiceResetTimer;
   Timer? _telemetryTimer;
+  Timer? _landTimer;
 
   bool _killed = false;
 
@@ -75,6 +76,15 @@ class DroneController extends ChangeNotifier {
 
   // This needs to be calibrated for the actual drone.
   static const double defaultHoverThrottle = 0.50;
+
+  // manualLand() ramps throttle down by this much every landStepInterval,
+  // rather than jumping to a single guessed "landing throttle" value -
+  // safer, since a wrong guess for a fixed value could mean too fast a
+  // drop or not descending at all. Pilot can override at any time by
+  // touching the throttle stick (setSticks() cancels the ramp) or pressing
+  // Hover/Kill/Disarm.
+  static const double landThrottleStep = 0.03;
+  static const Duration landStepInterval = Duration(milliseconds: 200);
 
   // Directional voice commands automatically center after this time.
   static const Duration voiceMovementDuration =
@@ -220,6 +230,10 @@ class DroneController extends ChangeNotifier {
     _voiceResetTimer?.cancel();
     _voiceResetTimer = null;
 
+    // Manual stick input overrides any in-progress manualLand() ramp.
+    _landTimer?.cancel();
+    _landTimer = null;
+
     if (r != null) {
       roll = r.clamp(-1.0, 1.0);
     }
@@ -340,6 +354,49 @@ class DroneController extends ChangeNotifier {
 
     _pushLog('Sent KILL to $targetDroneCharacter');
     notifyListeners();
+  }
+
+  /// Manual-mode landing: centers attitude and ramps throttle down
+  /// gradually (landThrottleStep every landStepInterval) rather than
+  /// jumping to a single guessed "descent throttle" value, then disarms
+  /// once throttle reaches zero. Overridable at any point by touching the
+  /// throttle stick (setSticks() cancels the ramp) or pressing Hover/Kill/
+  /// Disarm. Distinct from the autonomous FLIGHTPATH_LAND used by
+  /// Qualification/Square Test - this stays entirely within manual
+  /// ACCEL_SETPOINT_MODE control, no GPS/position estimate required.
+  void manualLand() {
+    if (!_canAcceptVoiceCommand('LAND')) {
+      return;
+    }
+
+    _voiceResetTimer?.cancel();
+    _voiceResetTimer = null;
+
+    pitch = 0.0;
+    roll = 0.0;
+    yaw = 0.0;
+
+    _pushLog('LAND: ramping throttle down from ${throttle.toStringAsFixed(2)}');
+    notifyListeners();
+
+    _landTimer?.cancel();
+    _landTimer = Timer.periodic(landStepInterval, (timer) {
+      if (!client.isConnected || _txTimer == null) {
+        timer.cancel();
+        _landTimer = null;
+        return;
+      }
+
+      throttle = (throttle - landThrottleStep).clamp(0.0, 1.0);
+      notifyListeners();
+
+      if (throttle <= 0.0) {
+        timer.cancel();
+        _landTimer = null;
+        _pushLog('LAND: throttle at zero, disarming');
+        disarm();
+      }
+    });
   }
 
   void _requestTelemetry() {
@@ -718,6 +775,8 @@ class DroneController extends ChangeNotifier {
   void _stopControlLoop() {
     _txTimer?.cancel();
     _txTimer = null;
+    _landTimer?.cancel();
+    _landTimer = null;
   }
 
   @override

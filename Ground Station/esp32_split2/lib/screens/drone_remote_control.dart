@@ -115,6 +115,8 @@ class DroneRemoteControl extends StatelessWidget {
                                 onArm: connected ? ctrl.arm : null,
                                 onDisarm: connected ? ctrl.disarm : null,
                                 onKill: connected ? ctrl.kill : null,
+                                onHover: connected ? ctrl.voiceHover : null,
+                                onLand: connected ? ctrl.manualLand : null,
                                 telemetryMultiline: [
                                   'thr=${ctrl.throttle.toStringAsFixed(2)}',
                                   'yaw=${ctrl.yaw.toStringAsFixed(2)}',
@@ -164,6 +166,8 @@ class DroneRemoteControl extends StatelessWidget {
                     onArm: connected ? ctrl.arm : null,
                     onDisarm: connected ? ctrl.disarm : null,
                     onKill: connected ? ctrl.kill : null,
+                    onHover: connected ? ctrl.voiceHover : null,
+                    onLand: connected ? ctrl.manualLand : null,
                     telemetry: telemetryText(),
                   ),
                   const SizedBox(height: 8),
@@ -254,6 +258,8 @@ class _HudPanel extends StatelessWidget {
     required this.onArm,
     required this.onDisarm,
     required this.onKill,
+    required this.onHover,
+    required this.onLand,
     required this.telemetryMultiline,
   });
 
@@ -262,6 +268,8 @@ class _HudPanel extends StatelessWidget {
   final VoidCallback? onArm;
   final VoidCallback? onDisarm;
   final VoidCallback? onKill;
+  final VoidCallback? onHover;
+  final VoidCallback? onLand;
   final List<String> telemetryMultiline;
 
   @override
@@ -317,6 +325,23 @@ class _HudPanel extends StatelessWidget {
                         ),
                       ),
                     ]),
+                    const SizedBox(height: 8),
+                    Row(children: [
+                      Expanded(child: ElevatedButton(onPressed: onHover, child: const Text('HOVER'))),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: onLand,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.orange,
+                            foregroundColor: Colors.white,
+                            disabledBackgroundColor: Colors.orange.withOpacity(0.35),
+                            disabledForegroundColor: Colors.white70,
+                          ),
+                          child: const Text('LAND'),
+                        ),
+                      ),
+                    ]),
                     const SizedBox(height: 10),
 
                     Container(
@@ -349,6 +374,8 @@ class _PortraitTopPanel extends StatelessWidget {
     required this.onArm,
     required this.onDisarm,
     required this.onKill,
+    required this.onHover,
+    required this.onLand,
     required this.telemetry,
   });
 
@@ -356,6 +383,8 @@ class _PortraitTopPanel extends StatelessWidget {
   final VoidCallback? onArm;
   final VoidCallback? onDisarm;
   final VoidCallback? onKill;
+  final VoidCallback? onHover;
+  final VoidCallback? onLand;
   final String telemetry;
 
   @override
@@ -401,6 +430,25 @@ class _PortraitTopPanel extends StatelessWidget {
                   disabledForegroundColor: Colors.white70,
                 ),
                 child: const Text('KILL'),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(child: ElevatedButton(onPressed: onHover, child: const Text('HOVER'))),
+            const SizedBox(width: 10),
+            Expanded(
+              child: ElevatedButton(
+                onPressed: onLand,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange,
+                  foregroundColor: Colors.white,
+                  disabledBackgroundColor: Colors.orange.withOpacity(0.35),
+                  disabledForegroundColor: Colors.white70,
+                ),
+                child: const Text('LAND'),
               ),
             ),
           ],
