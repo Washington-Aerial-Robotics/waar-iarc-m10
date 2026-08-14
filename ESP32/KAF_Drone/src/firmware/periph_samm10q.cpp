@@ -53,6 +53,15 @@ static bool isFixGoodQuality() {
       && SENSOR_BUFFER.gps.hdop <= GPS_MAX_HDOP;
 }
 
+//Pre-flight sensor status accessor (commander.cpp's sensorStatus telemetry bitfield): a quality-gated,
+//fresh fix, WITHOUT requiring gps_setOrigin() to have latched yet - unlike estimation_positionValid(),
+//which does require that, since this needs to report GPS health before a launch/start attempt has ever
+//had the chance to set an origin.
+bool gps_isFixGood() {
+  return isFixGoodQuality() && SENSOR_BUFFER.gps.lastFixMillis != 0 &&
+      ( millis() - SENSOR_BUFFER.gps.lastFixMillis ) <= GPS_STALE_MS;
+}
+
 bool gps_setOrigin() {
   if( !isFixGoodQuality() || millis() - SENSOR_BUFFER.gps.lastFixMillis > GPS_STALE_MS ) {
     DPRINTF( "[P] GPS Origin Latch Rejected: Quality=%u, Sats=%u, HDOP=%.2f\n",

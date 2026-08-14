@@ -116,7 +116,8 @@ class _QualificationPanel extends StatelessWidget {
     final stateLabel = QualificationControl._qualStateLabels[qualState] ??
         'Unknown ($qualState)';
 
-    final canLaunch = qualState == DroneComms.qualStateBoot;
+    final canLaunch = qualState == DroneComms.qualStateBoot &&
+        (telemetry.allSensorsOk ?? false);
     final canBeginOrbit = qualState == DroneComms.qualStateHoverHold;
     final canHold = qualState == DroneComms.qualStateOrbit;
     final canLandOrAbort = qualState != DroneComms.qualStateLanding &&
@@ -158,6 +159,8 @@ class _QualificationPanel extends StatelessWidget {
             ),
           ),
         ),
+        const SizedBox(height: 24),
+        _SensorStatusPanel(telemetry: telemetry),
         const SizedBox(height: 24),
         const VoiceControlPanel(),
         const SizedBox(height: 24),
@@ -230,7 +233,8 @@ class _SquareTestPanel extends StatelessWidget {
     final stateLabel = QualificationControl._squareStateLabels[squareState] ??
         'Unknown ($squareState)';
 
-    final canStart = squareState == DroneComms.squareStateBoot;
+    final canStart = squareState == DroneComms.squareStateBoot &&
+        (telemetry.allSensorsOk ?? false);
     final canLandOrAbort = squareState != DroneComms.squareStateLanding &&
         squareState != DroneComms.squareStateFinish;
 
@@ -259,6 +263,8 @@ class _SquareTestPanel extends StatelessWidget {
             ),
           ),
         ),
+        const SizedBox(height: 24),
+        _SensorStatusPanel(telemetry: telemetry),
         const SizedBox(height: 24),
         Text('Commands', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 8),
@@ -290,6 +296,101 @@ class _SquareTestPanel extends StatelessWidget {
               : null,
         ),
       ],
+    );
+  }
+}
+
+/// Pre-flight sensor check: one row per sensor with a green/red dot,
+/// gating LAUNCH/START (see canLaunch/canStart above) so a rejected
+/// sensor is visible before the operator wonders why the button won't
+/// press, rather than only inferring it from the state staying at BOOT.
+class _SensorStatusPanel extends StatelessWidget {
+  const _SensorStatusPanel({required this.telemetry});
+
+  final DroneTelemetry telemetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final rows = <(String, bool?)>[
+      ('GPS', telemetry.gpsOk),
+      ('Barometer', telemetry.baroOk),
+      ('IMU (accel/gyro)', telemetry.imuOk),
+      ('Magnetometer', telemetry.magOk),
+    ];
+    final allOk = telemetry.allSensorsOk;
+    final anyKnown = rows.any((r) => r.$2 != null);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Pre-Flight Sensors',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            for (final (name, ok) in rows) _SensorRow(name: name, ok: ok),
+            if (!anyKnown)
+              const Padding(
+                padding: EdgeInsets.only(top: 8),
+                child: Text(
+                  'No sensor telemetry received yet - check the connection.',
+                  style: TextStyle(color: Colors.orange),
+                ),
+              )
+            else if (allOk == false)
+              const Padding(
+                padding: EdgeInsets.only(top: 8),
+                child: Text(
+                  'One or more sensors are not active - launch/start is '
+                  'disabled until all are green.',
+                  style: TextStyle(color: Colors.red),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SensorRow extends StatelessWidget {
+  const _SensorRow({required this.name, required this.ok});
+
+  final String name;
+  final bool? ok;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color color;
+    final String label;
+    if (ok == null) {
+      color = Colors.grey;
+      label = 'unknown';
+    } else if (ok!) {
+      color = Colors.green;
+      label = 'active';
+    } else {
+      color = Colors.red;
+      label = 'not active';
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          Container(
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 8),
+          Expanded(child: Text(name)),
+          Text(label, style: TextStyle(color: color)),
+        ],
+      ),
     );
   }
 }

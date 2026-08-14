@@ -80,6 +80,12 @@ class DroneComms {
   static const int squareStateLanding = 6;
   static const int squareStateFinish = 7;
 
+  // kafenv.info.sensorStatus bits (commander.h) - pre-flight sensor health.
+  static const int sensorStatusGps = 0x01;
+  static const int sensorStatusBaro = 0x02;
+  static const int sensorStatusImu = 0x04;
+  static const int sensorStatusMag = 0x08;
+
   // Maps to COM_REQUEST_STATE / COM_REPLY_STATE — the "dronestate" reply,
   // which carries position + flight status. There is no dedicated
   // position-only message in the firmware.
@@ -398,6 +404,7 @@ class DroneTelemetry {
     this.qualState,
     this.qualRevolutions,
     this.squareState,
+    this.sensorStatus,
   });
 
   final Coordinate3? position;
@@ -430,6 +437,28 @@ class DroneTelemetry {
   // SQUARE_BOOT..SQUARE_FINISH (see commander.h) - only meaningful when
   // autonomyMode == SQUARE_TEST.
   final int? squareState;
+  // SENSOR_STATUS_GPS/BARO/IMU/MAG bitfield (see commander.h) - pre-flight
+  // sensor health, independent of which autonomyMode is selected. Use the
+  // gpsOk/baroOk/imuOk/magOk/allSensorsOk getters below rather than
+  // decoding the bits directly.
+  final int? sensorStatus;
+
+  bool? get gpsOk => sensorStatus == null
+      ? null
+      : (sensorStatus! & DroneComms.sensorStatusGps) != 0;
+  bool? get baroOk => sensorStatus == null
+      ? null
+      : (sensorStatus! & DroneComms.sensorStatusBaro) != 0;
+  bool? get imuOk => sensorStatus == null
+      ? null
+      : (sensorStatus! & DroneComms.sensorStatusImu) != 0;
+  bool? get magOk => sensorStatus == null
+      ? null
+      : (sensorStatus! & DroneComms.sensorStatusMag) != 0;
+  bool? get allSensorsOk {
+    if (sensorStatus == null) return null;
+    return gpsOk! && baroOk! && imuOk! && magOk!;
+  }
 
   /// Returns a copy with any non-null fields from [update] overlaid on top
   /// of this telemetry, so partial replies (e.g. position-only) don't wipe
@@ -450,6 +479,7 @@ class DroneTelemetry {
       qualState: update.qualState ?? qualState,
       qualRevolutions: update.qualRevolutions ?? qualRevolutions,
       squareState: update.squareState ?? squareState,
+      sensorStatus: update.sensorStatus ?? sensorStatus,
     );
   }
 
@@ -482,13 +512,14 @@ class DroneTelemetry {
   }
 
   /// Decodes a COM_REPLY_INFO payload ("droneinfo"): identification,
-  /// firmware version, battery, and autonomy/qualification/square-test
-  /// status. Wire layout: [deviceID,flightMode,triggerLock,actuation:
-  /// uint8 x4][version: uint32][battery: float32][autonomyMode,
-  /// formationSlot,qualState,qualRevolutions,squareState: uint8 x5] = 17
-  /// bytes. Bytes past the first 12 are read defensively (payload.length
-  /// checks) so this keeps working against older firmware that sends
-  /// fewer of them.
+  /// firmware version, battery, autonomy/qualification/square-test status,
+  /// and pre-flight sensor health. Wire layout:
+  /// [deviceID,flightMode,triggerLock,actuation: uint8 x4]
+  /// [version: uint32][battery: float32]
+  /// [autonomyMode,formationSlot,qualState,qualRevolutions,squareState,
+  /// sensorStatus: uint8 x6] = 18 bytes. Bytes past the first 12 are read
+  /// defensively (payload.length checks) so this keeps working against
+  /// older firmware that sends fewer of them.
   static DroneTelemetry? fromInfoReply(Uint8List payload) {
     if (payload.length < 12) return null;
 
@@ -504,6 +535,7 @@ class DroneTelemetry {
       qualState: payload.length >= 15 ? payload[14] : null,
       qualRevolutions: payload.length >= 16 ? payload[15] : null,
       squareState: payload.length >= 17 ? payload[16] : null,
+      sensorStatus: payload.length >= 18 ? payload[17] : null,
     );
   }
 

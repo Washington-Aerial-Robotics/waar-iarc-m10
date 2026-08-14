@@ -45,3 +45,7 @@ bool gps_setOrigin();
 //single source of truth mode-entry guards and the qualification failure monitor should check before
 //trusting kafenv.state.x for autonomous position/trajectory control.
 bool estimation_positionValid();
+//True when GPS currently has a quality-gated, fresh fix - unlike estimation_positionValid(), does NOT
+//require gps_setOrigin() to have been called yet, so this can report GPS health as a pre-flight sensor
+//check before any launch/start attempt.
+bool gps_isFixGood();
