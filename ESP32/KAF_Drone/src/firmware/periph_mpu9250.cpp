@@ -175,3 +175,16 @@ void peripheral_mpu9250Init() {
   ITRVEC3( i ) kafenv.cal.gyrofilt[i].gain = MPU_GYRO_SCALE;
   ITRVEC3( i ) kafenv.cal.magfilt[i].gain = AK_MAG_SCALE;
 }
+
+//Pre-flight sensor status accessors (commander.cpp's sensorStatus telemetry bitfield) - plain reads of
+//these two bools, no synchronization: peripheral_mpu9250Loop() runs on the flight task core, these are
+//read from the com task core in commander_step(), but single-byte bool reads/writes are atomic on this
+//architecture and this is telemetry only, not control logic, matching this codebase's existing convention
+//for cross-core telemetry reads (e.g. kafenv.state.x).
+bool peripheral_mpu9250Working() {
+  return mpu.imuworking;
+}
+
+bool peripheral_mpu9250MagWorking() {
+  return mpu.magworking;
+}

@@ -20,6 +20,15 @@
 //and low battery. Deliberately short relative to those (Pi setpoints are expected at well over 1Hz).
 #define SETPOINT_STALE_MS 500UL
 
+//kafenv.info.sensorStatus bits - pre-flight sensor health, recomputed every commander_step() tick and
+//exposed via the existing COM_REQUEST_INFO telemetry (see kaf_drone.h). Independent of estimation_positionValid()/
+//gps_isFixGood()'s use in mode-entry guards - this is purely a display aid so an operator can see WHICH
+//sensor is the problem before ever attempting a launch, rather than a bare "position invalid" rejection.
+#define SENSOR_STATUS_GPS  0b0001
+#define SENSOR_STATUS_BARO 0b0010
+#define SENSOR_STATUS_IMU  0b0100
+#define SENSOR_STATUS_MAG  0b1000
+
 //kafenv.info.autonomyMode - which autonomy behavior commander_step() runs. Orthogonal to flightMode.
 #define AUTONOMY_MANUAL        0
 #define AUTONOMY_QUALIFICATION 1

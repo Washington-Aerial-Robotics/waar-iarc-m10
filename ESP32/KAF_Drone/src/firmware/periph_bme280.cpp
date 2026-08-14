@@ -51,3 +51,9 @@ void peripheral_bme280Init() {
   }
   DPRINTF( "[P] BME 280 Success Status: %s\n", bme.working ? "Yes" : "No" );
 }
+
+//Pre-flight sensor status accessor (commander.cpp's sensorStatus telemetry bitfield) - see the matching
+//comment on peripheral_mpu9250Working() for why no synchronization is needed for this cross-core read.
+bool peripheral_bme280Working() {
+  return bme.working;
+}

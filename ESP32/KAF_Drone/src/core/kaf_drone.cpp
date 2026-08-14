@@ -28,6 +28,7 @@ peripheral kaf_reset() {
   kafenv.info.qualState = 0; //QUAL_BOOT
   kafenv.info.qualRevolutions = 0;
   kafenv.info.squareState = 0; //SQUARE_BOOT
+  kafenv.info.sensorStatus = 0;
   FPFILL0( i, kafenv.state.x.f );
   FPFILL0( i, kafenv.state.v.f );
   FPFILL0( i, kafenv.state.q.f );

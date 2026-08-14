@@ -5,6 +5,10 @@
 #include "common_data.h"
 #include "estimation.h"
 
+extern bool peripheral_mpu9250Working();
+extern bool peripheral_mpu9250MagWorking();
+extern bool peripheral_bme280Working();
+
 #if ALT_DEFINE
 #define NAN 0.0F
 #define isfinite( arg ) true
@@ -774,5 +778,13 @@ void commander_step( const unsigned long currentTime ) {
   }
   commander_qualificationStep( currentTime );
   commander_squareStep( currentTime );
+  //Pre-flight sensor status, recomputed every tick regardless of mode - a display aid distinct from
+  //estimation_positionValid()/gps_isFixGood()'s use in the actual mode-entry/failsafe gates above, so an
+  //operator can see WHICH sensor is the problem before ever attempting a launch.
+  kafenv.info.sensorStatus =
+      ( gps_isFixGood()               ? SENSOR_STATUS_GPS  : 0 ) |
+      ( peripheral_bme280Working()    ? SENSOR_STATUS_BARO : 0 ) |
+      ( peripheral_mpu9250Working()   ? SENSOR_STATUS_IMU  : 0 ) |
+      ( peripheral_mpu9250MagWorking() ? SENSOR_STATUS_MAG  : 0 );
   commander.lastTime = currentTime;
 }
