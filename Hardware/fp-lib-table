@@ -1,4 +1,0 @@
-(fp_lib_table
-  (version 7)
-  (lib (name "ESP32_Drone")(type "KiCad")(uri "U:/ESP32_Drone")(options "")(descr ""))
-)

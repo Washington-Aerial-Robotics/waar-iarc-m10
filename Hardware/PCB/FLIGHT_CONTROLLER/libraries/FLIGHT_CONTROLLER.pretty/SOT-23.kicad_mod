@@ -1,0 +1,190 @@
+(footprint "SOT-23"
+	(version 20241229)
+	(generator "pcbnew")
+	(generator_version "9.0")
+	(layer "F.Cu")
+	(descr "<b>SOT23</b>")
+	(property "Reference" "REF**"
+		(at 0.317628 -2.350438 270)
+		(layer "F.SilkS")
+		(uuid "90080d5c-9a93-40f1-adf7-ea88decaa3a2")
+		(effects
+			(font
+				(size 0.70028 0.70028)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Value" "S8050"
+		(at 0.635323 2.47775 180)
+		(layer "F.Fab")
+		(uuid "95b0a15f-66b0-48f6-9827-1d73e471749a")
+		(effects
+			(font
+				(size 0.500253 0.500253)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Datasheet" "http://www.unisonic.com.tw/datasheet/S8050.pdf"
+		(at 0 0 180)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "7bc99187-5435-43bc-9cfc-1214bc828a19")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Description" "0.7A Ic, 20V Vce, Low Voltage High Current NPN Transistor, TO-92"
+		(at 0 0 180)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "37003224-ebce-4dbb-aa62-f3e4d02728a8")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Sim.Device" ""
+		(at 0 0 0)
+		(unlocked yes)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "bd675b46-7374-46cc-99a7-76c675584376")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "LCSC" "C916390"
+		(at 0 0 0)
+		(unlocked yes)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "7581a2d3-a942-4f44-bc6e-47e0b1c5cf35")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(attr smd)
+	(fp_line
+		(start -1.4605 -0.635)
+		(end -1.4605 0.254)
+		(stroke
+			(width 0.127)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "82f96e83-e18e-4d94-a73d-bed29d799b63")
+	)
+	(fp_line
+		(start -0.6985 -0.635)
+		(end -1.4605 -0.635)
+		(stroke
+			(width 0.127)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "892d36b9-821a-460d-bd4b-be52f8397f38")
+	)
+	(fp_line
+		(start 1.4605 -0.635)
+		(end 0.6985 -0.635)
+		(stroke
+			(width 0.127)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "16de220a-d123-4459-bc6b-9f45baa3e1e1")
+	)
+	(fp_line
+		(start 1.4605 0.254)
+		(end 1.4605 -0.635)
+		(stroke
+			(width 0.127)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "c9278b19-05fa-4a42-b76d-4f5567319a53")
+	)
+	(fp_poly
+		(pts
+			(xy -1.5255 -1.651) (xy 1.524 -1.651) (xy 1.524 1.65263) (xy -1.5255 1.65263)
+		)
+		(stroke
+			(width 0.01)
+			(type solid)
+		)
+		(fill yes)
+		(layer "F.CrtYd")
+		(uuid "f119533c-dcbb-4b52-8567-49e300895eb8")
+	)
+	(fp_poly
+		(pts
+			(xy -1.16846 0.7112) (xy -0.7112 0.7112) (xy -0.7112 1.29547) (xy -1.16846 1.29547)
+		)
+		(stroke
+			(width 0.01)
+			(type solid)
+		)
+		(fill yes)
+		(layer "F.Fab")
+		(uuid "b9527375-b8e9-46d8-bc79-8804802fba9b")
+	)
+	(fp_poly
+		(pts
+			(xy -0.228612 -1.2954) (xy 0.2286 -1.2954) (xy 0.2286 -0.711238) (xy -0.228612 -0.711238)
+		)
+		(stroke
+			(width 0.01)
+			(type solid)
+		)
+		(fill yes)
+		(layer "F.Fab")
+		(uuid "68b61e6d-4cb5-4227-9955-e9fc6b786b93")
+	)
+	(fp_poly
+		(pts
+			(xy 0.711335 0.7112) (xy 1.1684 0.7112) (xy 1.1684 1.29565) (xy 0.711335 1.29565)
+		)
+		(stroke
+			(width 0.01)
+			(type solid)
+		)
+		(fill yes)
+		(layer "F.Fab")
+		(uuid "d23a8d52-fe7e-4f3d-a3d5-8dc559684f7c")
+	)
+	(pad "1" smd rect
+		(at -0.889 1.016)
+		(size 1.016 1.143)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(solder_mask_margin 0.102)
+		(uuid "c75d354a-f0a2-4ce6-81f5-ec6745fda751")
+	)
+	(pad "2" smd rect
+		(at 0.889 1.016)
+		(size 1.016 1.143)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(solder_mask_margin 0.102)
+		(uuid "55d10149-0ab1-46df-99be-df1fd17a52c8")
+	)
+	(pad "3" smd rect
+		(at 0 -1.016)
+		(size 1.016 1.143)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(solder_mask_margin 0.102)
+		(uuid "f7dd9916-71cc-4c2e-8d24-e27f4babf026")
+	)
+	(embedded_fonts no)
+)
