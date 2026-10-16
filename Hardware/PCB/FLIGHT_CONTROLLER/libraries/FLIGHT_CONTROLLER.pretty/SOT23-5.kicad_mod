@@ -1,0 +1,270 @@
+(footprint "SOT23-5"
+	(version 20241229)
+	(generator "pcbnew")
+	(generator_version "9.0")
+	(layer "F.Cu")
+	(descr "Small Outline Transistor")
+	(property "Reference" "REF**"
+		(at 2.5 1.5 180)
+		(unlocked yes)
+		(layer "F.SilkS")
+		(uuid "f215dfc8-c5dc-4517-9d00-64728ff1936a")
+		(effects
+			(font
+				(size 0.782889 0.782889)
+				(thickness 0.029911)
+			)
+			(justify left bottom)
+		)
+	)
+	(property "Value" "ME6217C33M5G"
+		(at -0.9525 0.1905 180)
+		(unlocked yes)
+		(layer "F.Fab")
+		(uuid "d084bae1-23af-4fb2-957c-9e52628c6fed")
+		(effects
+			(font
+				(size 0.376489 0.376489)
+				(thickness 0.029911)
+			)
+			(justify right top)
+		)
+	)
+	(property "Datasheet" "https://datasheet.lcsc.com/lcsc/1912111437_MICRONE-Nanjing-Micro-One-Elec-ME6217C33M5G_C427602.pdf"
+		(at 0 0 180)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "6237cd47-d3c6-4484-a4e6-d522c9268985")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Description" "3.3V Linear Voltage Regulators (LDO)  800mA"
+		(at 0 0 180)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "459eb445-884b-4ab6-9bc1-aa238668204a")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "LCSC" "C427602"
+		(at 0 0 0)
+		(unlocked yes)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "cc3b088b-f73b-4eef-b570-2eb4a151f7fe")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Sim.Device" ""
+		(at 0 0 0)
+		(unlocked yes)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "1b483e2b-44c3-4d6d-9e67-be4ba3724b33")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(fp_line
+		(start -1.27 0.4294)
+		(end -1.27 -0.4294)
+		(stroke
+			(width 0.2032)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "46b508f5-959d-4167-ae76-5a1059c1960a")
+	)
+	(fp_line
+		(start -0.2684 -0.7088)
+		(end 0.2684 -0.7088)
+		(stroke
+			(width 0.2032)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "b3de5d22-67c2-4add-b438-0ea3756efdd3")
+	)
+	(fp_line
+		(start 1.27 -0.4294)
+		(end 1.27 0.4294)
+		(stroke
+			(width 0.2032)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "b553acc0-c606-4db3-9d2e-c7fc7d34c9b5")
+	)
+	(fp_circle
+		(center -1.6002 1.016)
+		(end -1.5367 1.016)
+		(stroke
+			(width 0.127)
+			(type solid)
+		)
+		(fill yes)
+		(layer "F.SilkS")
+		(uuid "4e47643a-e0fe-4090-8529-41551107f906")
+	)
+	(fp_line
+		(start -1.4 -0.8)
+		(end -1.4 0.8)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(layer "F.Fab")
+		(uuid "f1a73e17-4785-4008-acd2-2fe6e37e6a63")
+	)
+	(fp_line
+		(start -1.4 -0.8)
+		(end 1.4 -0.8)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(layer "F.Fab")
+		(uuid "a8266893-916f-4a1c-ae4d-002e1ed95ae8")
+	)
+	(fp_line
+		(start 1.4 -0.8)
+		(end 1.4 0.8)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(layer "F.Fab")
+		(uuid "991cf0a5-e2e3-4f94-8a49-f1b735db7c92")
+	)
+	(fp_line
+		(start 1.4 0.8)
+		(end -1.4 0.8)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(layer "F.Fab")
+		(uuid "ff53c07c-49cc-495c-be88-7da25d79e975")
+	)
+	(fp_poly
+		(pts
+			(xy -1.2 -0.85) (xy -0.7 -0.85) (xy -0.7 -1.5) (xy -1.2 -1.5)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(fill yes)
+		(layer "F.Fab")
+		(uuid "8fbe167d-981c-43e1-b1a8-20f0b1d897cf")
+	)
+	(fp_poly
+		(pts
+			(xy -1.2 1.5) (xy -0.7 1.5) (xy -0.7 0.85) (xy -1.2 0.85)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(fill yes)
+		(layer "F.Fab")
+		(uuid "31c9f2bf-b4a8-4cd4-96e9-2af8ca6534e2")
+	)
+	(fp_poly
+		(pts
+			(xy -0.25 1.5) (xy 0.25 1.5) (xy 0.25 0.85) (xy -0.25 0.85)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(fill yes)
+		(layer "F.Fab")
+		(uuid "22c2af92-d5ba-416b-b847-b6137f6640f0")
+	)
+	(fp_poly
+		(pts
+			(xy 0.7 -0.85) (xy 1.2 -0.85) (xy 1.2 -1.5) (xy 0.7 -1.5)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(fill yes)
+		(layer "F.Fab")
+		(uuid "d262d495-1d43-421a-b9e5-84523b87e50f")
+	)
+	(fp_poly
+		(pts
+			(xy 0.7 1.5) (xy 1.2 1.5) (xy 1.2 0.85) (xy 0.7 0.85)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(fill yes)
+		(layer "F.Fab")
+		(uuid "7e1e6963-cf8f-4137-8b29-3a3975fa7b09")
+	)
+	(pad "1" smd rect
+		(at -0.95 1.3001)
+		(size 0.55 1.2)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(solder_mask_margin 0.1016)
+		(solder_paste_margin 0)
+		(thermal_bridge_angle 0)
+		(uuid "9298e26a-67b3-441a-9f94-2b317013b109")
+	)
+	(pad "2" smd rect
+		(at 0 1.3001)
+		(size 0.55 1.2)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(solder_mask_margin 0.1016)
+		(solder_paste_margin 0)
+		(thermal_bridge_angle 0)
+		(uuid "68d6f4f3-aa44-49e9-ae65-682fb7b68893")
+	)
+	(pad "3" smd rect
+		(at 0.95 1.3001)
+		(size 0.55 1.2)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(solder_mask_margin 0.1016)
+		(solder_paste_margin 0)
+		(thermal_bridge_angle 0)
+		(uuid "650cccd2-3165-4ac3-9a9e-5077ee785136")
+	)
+	(pad "4" smd rect
+		(at 0.95 -1.3001)
+		(size 0.55 1.2)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(solder_mask_margin 0.1016)
+		(solder_paste_margin 0)
+		(thermal_bridge_angle 0)
+		(uuid "d71e934e-2d26-4855-b19c-9195a5cb2af8")
+	)
+	(pad "5" smd rect
+		(at -0.95 -1.3001)
+		(size 0.55 1.2)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(solder_mask_margin 0.1016)
+		(solder_paste_margin 0)
+		(thermal_bridge_angle 0)
+		(uuid "4d8d7e20-07c9-4094-b6b0-1ffdf3cc5f40")
+	)
+	(embedded_fonts no)
+)

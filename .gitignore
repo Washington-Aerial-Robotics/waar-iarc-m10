@@ -41,3 +41,12 @@
 *.dwo
 ~$*
 *.SLDBAK
+
+# KiCad
+*.kicad_prl
+*.kicad_sch-bak
+fp-info-cache
+*-backups/
+production/backups/
+*.lck
+_autosave-*

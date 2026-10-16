@@ -1,0 +1,183 @@
+(footprint "157SW"
+	(version 20241229)
+	(generator "pcbnew")
+	(generator_version "9.0")
+	(layer "F.Cu")
+	(property "Reference" "REF**"
+		(at 3.15025 -2.525 180)
+		(unlocked yes)
+		(layer "F.SilkS")
+		(uuid "02dc0170-8419-4ce0-b745-fb2ac5014b64")
+		(effects
+			(font
+				(size 0.767933 0.767933)
+				(thickness 0.044867)
+			)
+			(justify left bottom)
+		)
+	)
+	(property "Value" "SW_MEC_5G"
+		(at -0.4569 1.7021 0)
+		(unlocked yes)
+		(layer "F.Fab")
+		(uuid "5526f5e4-e563-4e80-9b52-8a069bbd7f6b")
+		(effects
+			(font
+				(size 0.564733 0.564733)
+				(thickness 0.044867)
+			)
+			(justify left bottom)
+		)
+	)
+	(property "Datasheet" "http://www.apem.com/int/index.php?controller=attachment&id_attachment=488"
+		(at 0 0 180)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "1d996158-9c57-4ad2-873c-5cfe3a68ec6c")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Description" "MEC 5G single pole normally-open tactile switch"
+		(at 0 0 180)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "78221ba9-a666-4c88-bf73-0c6a0fac0982")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Sim.Device" ""
+		(at 0 0 0)
+		(unlocked yes)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "36665846-5859-4c31-8529-bcd50f23e13b")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "LCSC" "C231329"
+		(at 0 0 0)
+		(unlocked yes)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "2d556987-9385-4893-a746-c2f1d7688d9f")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(fp_line
+		(start 1.016 -1.27)
+		(end 3.048 -1.27)
+		(stroke
+			(width 0.2032)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "bd7d6393-04bd-4ce2-95d0-2fe948f831ef")
+	)
+	(fp_line
+		(start 1.016 1.27)
+		(end 3.048 1.27)
+		(stroke
+			(width 0.2032)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "3084165c-84ae-4a61-bf63-d261177d26e9")
+	)
+	(fp_circle
+		(center 2.032 0)
+		(end 2.8451 0)
+		(stroke
+			(width 0.2032)
+			(type solid)
+		)
+		(fill no)
+		(layer "F.SilkS")
+		(uuid "79a81e11-53a4-41cb-aab0-8820fcc63d48")
+	)
+	(fp_line
+		(start 0 -1.27)
+		(end 3.9878 -1.27)
+		(stroke
+			(width 0.127)
+			(type solid)
+		)
+		(layer "F.Fab")
+		(uuid "0af1856f-7e4a-494b-850f-0797042136a2")
+	)
+	(fp_line
+		(start 0 1.27)
+		(end 0 -1.27)
+		(stroke
+			(width 0.127)
+			(type solid)
+		)
+		(layer "F.Fab")
+		(uuid "b07d19a4-c31f-4c31-8d06-edcb51d60df3")
+	)
+	(fp_line
+		(start 3.9878 -1.27)
+		(end 3.9878 1.27)
+		(stroke
+			(width 0.127)
+			(type solid)
+		)
+		(layer "F.Fab")
+		(uuid "91fadd15-345e-4ea4-8cd0-32b7bfd1c107")
+	)
+	(fp_line
+		(start 3.9878 1.27)
+		(end 0 1.27)
+		(stroke
+			(width 0.127)
+			(type solid)
+		)
+		(layer "F.Fab")
+		(uuid "e24809a3-7de7-4ca0-afdf-c707a2569d7a")
+	)
+	(fp_circle
+		(center 2.032 0)
+		(end 2.8451 0)
+		(stroke
+			(width 0.127)
+			(type solid)
+		)
+		(fill no)
+		(layer "F.Fab")
+		(uuid "dfc4c829-0c69-487b-bfad-13fac87021ec")
+	)
+	(pad "1" smd rect
+		(at 0 0)
+		(size 1.016 1.9812)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(solder_mask_margin 0.1016)
+		(solder_paste_margin 0)
+		(thermal_bridge_angle 0)
+		(uuid "4569d1dc-3691-4338-92ca-ec3ce186553f")
+	)
+	(pad "2" smd rect
+		(at 4.0005 0)
+		(size 1.016 1.9812)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(solder_mask_margin 0.1016)
+		(solder_paste_margin 0)
+		(thermal_bridge_angle 0)
+		(uuid "c65861b7-cb55-46a0-9db2-962b154e012a")
+	)
+	(embedded_fonts no)
+)
