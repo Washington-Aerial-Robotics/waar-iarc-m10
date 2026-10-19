@@ -10,7 +10,18 @@
 #include <Arduino.h>
 #endif
 
+//Optional lab-router credentials (gitignored) - when present the drone joins that router at boot instead of
+//hosting its own AP. See wifi_credentials.h.example.
+#if __has_include( "wifi_credentials.h" )
+#include "wifi_credentials.h"
+#endif
+
 #define WIFI_COM_METHOD 2
+#define WIFI_AP_NAME    "KAF_Quadcopter_Drone"
+//If a station (router) connection hasn't come up this long after it was configured - wrong password, router
+//off, or a 5 GHz-only SSID the ESP32 can't see - fall back to hosting the AP so the drone is never unreachable.
+//Only applies until the first successful connection; later router dropouts are left to WiFi auto-reconnect.
+#define WIFI_STA_TIMEOUT_MS 20000UL
 
 extern COMS_BUFFERTYPE;
 
@@ -35,6 +46,8 @@ static struct {
   } p;
   unsigned int networkHash;
   bool wifiConnected = false;
+  unsigned long staStartMillis = 0;                 //millis() when the current station config was applied
+  bool staEverConnected = false;                    //station config has connected at least once
   radio coms;
   WiFiServer server = WiFiServer( 70 );
   WiFiClient client;
@@ -91,7 +104,16 @@ void peripheral_wifiLoop() {
       WiFi.softAP( wifi.p.networkName, wifi.p.networkPassword[0] == '\0' ? NULL : wifi.p.networkPassword, 1, 0, 1 );
     } else {
       WiFi.mode( WIFI_STA );
+#ifdef WIFI_STA_IP
+      //fixed IP only for the router it was chosen for - a COM_SET_WIFI to any other network uses DHCP
+      if( strcmp( wifi.p.networkName, WIFI_STA_SSID ) == 0 ) {
+        WiFi.config( IPAddress( WIFI_STA_IP ), IPAddress( WIFI_STA_GATEWAY ), IPAddress( WIFI_STA_SUBNET ),
+            IPAddress( WIFI_STA_GATEWAY ) );
+      }
+#endif
       WiFi.begin( wifi.p.networkName, wifi.p.networkPassword );
+      wifi.staStartMillis = millis();
+      wifi.staEverConnected = false;
     }
     //WiFi modem sleep periodically blocks the CPU for tens of ms at unpredictable times to power-cycle
     //the radio - well-documented on ESP32 as breaking time-sensitive I2C/SPI transactions (exactly the
@@ -109,6 +131,7 @@ void peripheral_wifiLoop() {
       }
       Serial.printf( "GG\076G[ip=%s]\n", wifi.p.networkAddress );
       wifi.wifiConnected = true;
+      wifi.staEverConnected = !wifi.p.wifiSetAP;
     }
     //DEBUG logging throttled to ~1/s - see periph_freertos.cpp for why
     static unsigned long lastWifiPrint = 0;
@@ -122,6 +145,13 @@ void peripheral_wifiLoop() {
     }
   } else {
     wifi.wifiConnected = false;
+    if( !wifi.staEverConnected && millis() - wifi.staStartMillis > WIFI_STA_TIMEOUT_MS ) {
+      Serial.printf( "[P] WiFi Could Not Join Network=%s, Falling Back To AP=%s\n", wifi.p.networkName, WIFI_AP_NAME );
+      wifi.p.wifiSetAP = true;
+      strcpy( wifi.p.networkName, WIFI_AP_NAME );
+      strcpy( wifi.p.networkPassword, "" );
+      updateNetworkHash();
+    }
   }
 }
 
@@ -133,9 +163,15 @@ void peripheral_wifiInit() {
   //"Attempting WiFi Connection: Network=, Password=" right after "Running Startup Commands").
   firmware_registerPeripheral( { "wifi", 0, sizeof( wifi ), &wifi, &peripheral_wifiInit, &peripheral_wifiLoop } );
   DPRINTF( "[P] Initializing WiFi\n" );
+#ifdef WIFI_STA_SSID
+  wifi.p.wifiSetAP = false;
+  strncpy( wifi.p.networkName,     WIFI_STA_SSID,     sizeof( wifi.p.networkName ) - 1 );
+  strncpy( wifi.p.networkPassword, WIFI_STA_PASSWORD, sizeof( wifi.p.networkPassword ) - 1 );
+#else
   wifi.p.wifiSetAP = true;
-  strcpy( wifi.p.networkName,     "KAF_Quadcopter_Drone" );
+  strcpy( wifi.p.networkName,     WIFI_AP_NAME );
   strcpy( wifi.p.networkPassword, "" );
+#endif
   strcpy( wifi.p.networkAddress,  "unknown" );
   updateNetworkHash();
   wifi.coms = { 0, WIFI_COM_METHOD, false, true, COMS_BUFFER, &wifiReceiving, &wifiSending, &wifiSending };

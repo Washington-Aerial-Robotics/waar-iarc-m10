@@ -50,3 +50,6 @@ fp-info-cache
 production/backups/
 *.lck
 _autosave-*
+
+# Local WiFi router credentials for the drone (see wifi_credentials.h.example)
+ESP32/KAF_Drone/src/firmware/wifi_credentials.h
