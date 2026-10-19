@@ -1,5 +1,11 @@
 # Vicon Motion Capture Testing
 
+For an **onboard Raspberry Pi 4/5 companion** (PC SDK relay, Pi installation,
+physical test order and SD-card image capture), start with the
+[single-drone Pi guide](../../../../deploy/raspberry-pi/README.md).
+Use `relay --pi-ip <pi-ip>` on the PC and `monitor`/`bridge --udp-source <pc-ip>`
+on the Pi; the Pi does not need the Vicon SDK.
+
 Fly the KAF drone indoors using Vicon Tracker (tested against Tracker 3.10) for position, instead of GPS and the barometer.
 
 ```

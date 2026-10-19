@@ -6,3 +6,6 @@
 *.SLDPRT filter=lfs diff=lfs merge=lfs -text
 *.SLDASM filter=lfs diff=lfs merge=lfs -text
 *.SLDDRW filter=lfs diff=lfs merge=lfs -text
+
+# Pi deployment scripts must retain Unix line endings on Windows checkouts.
+*.sh text eol=lf

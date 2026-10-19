@@ -25,6 +25,17 @@ static struct {
   DShotRMT* motors[ FPARLEN( kafenv.cmd.motors ) ];
 } escs;
 
+static void escSendPercent( DShotRMT* motor, const float percent ) {
+  //DShotRMT 0.9.5 maps 0 percent to raw throttle 48 (minimum running
+  //throttle). Raw zero is the explicit MOTOR_STOP command, required for
+  //disabled output, the arm sequence, and a zero motor-test setpoint.
+  if( percent <= 0.0F ) {
+    motor->sendThrottle( 0 );
+  } else {
+    motor->sendThrottlePercent( percent );
+  }
+}
+
 void peripheral_escsLoop() {
   //DEBUG logging throttled to ~1/s - see periph_freertos.cpp for why
   static unsigned long lastEscPrint = 0;
@@ -41,12 +52,12 @@ void peripheral_escsLoop() {
         value += escs.setpoints[i];
         BOUND( value, 0.0F, 100.0F );
         escs.setpoints[i] = value;
-        escs.motors[i]->sendThrottlePercent( value );
+        escSendPercent( escs.motors[i], value );
       }
     } else {
       if( escPrintDue ) DPRINTF( "[P] Run ESCs: Status=ARMING\n" );
       for( int i = 0; i < FPARLEN( kafenv.cmd.motors ); i++ ) {
-        escs.motors[i]->sendThrottlePercent( 0.0F );
+        escSendPercent( escs.motors[i], 0.0F );
       }
       if( ++escs.armFrames >= ESC_ARM_FRAMES ) {
         escs.motorEnabled = true;
@@ -59,7 +70,7 @@ void peripheral_escsLoop() {
     escs.armFrames = 0;
     for( int i = 0; i < FPARLEN( kafenv.cmd.motors ); i++ ) {
       escs.setpoints[i] = 0.0F;
-      escs.motors[i]->sendThrottlePercent( 0.0F );
+      escSendPercent( escs.motors[i], 0.0F );
     }
   }
 }
@@ -72,7 +83,7 @@ void peripheral_escsInit() {
   for( int i = 0; i < FPARLEN( kafenv.cmd.motors ); i++ ) {
     escs.motors[i] = new DShotRMT( ( uint16_t )escs.pins[i], ESC_DSHOT_MODE, ESC_BIDIRECTIONAL );
     escs.motors[i]->begin();
-    escs.motors[i]->sendThrottlePercent( 0.0F );
+    escSendPercent( escs.motors[i], 0.0F );
     escs.setpoints[i] = 0.0F;
   }
 }

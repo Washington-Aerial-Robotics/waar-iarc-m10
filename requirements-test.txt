@@ -1,0 +1,4 @@
+# All pure Python repository tests and the headless single-drone simulation.
+# The Pi bridge itself uses only Python's standard library.
+numpy>=1.24
+pytest>=7

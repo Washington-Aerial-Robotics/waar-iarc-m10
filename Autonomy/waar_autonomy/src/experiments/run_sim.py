@@ -135,12 +135,12 @@ def run_animated(sim: Simulator, gt_map, cfg: Config) -> None:
 def _print_result(sim: Simulator) -> None:
     if sim.mission.certified:
         print(
-            f"\n✅  CERTIFIED at tick {sim.mission.cert_tick}  "
+            f"\nCERTIFIED at tick {sim.mission.cert_tick}  "
             f"clearance={sim.mission.cert_clearance:.2f} fine-cells  "
             f"path_len={len(sim.mission.corridor)} fine-cells"
         )
     else:
-        print(f"\n⚠   Not certified after {sim.mission.tick} ticks.")
+        print(f"\nNot certified after {sim.mission.tick} ticks.")
 
 
 def main() -> None:

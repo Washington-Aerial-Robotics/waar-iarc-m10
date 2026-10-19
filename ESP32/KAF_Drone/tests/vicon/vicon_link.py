@@ -10,6 +10,8 @@ Modes:
              included) - use it to check axes/yaw before flying.
     bridge   Streams Vicon positions to the drone as COM_SET_MOCAP (needs
              firmware_vicon) and shows the drone's state alongside.
+    relay    On the Vicon PC, forward poses to --pi-ip via UDP. On the Pi,
+             use monitor/bridge --udp-source <PC-IP>. See deploy/raspberry-pi.
 
 Examples:
     python vicon_link.py vicon   --vicon 192.168.10.2 --object waar1
@@ -28,19 +30,13 @@ drone facing Vicon +X and no rotation is needed; otherwise pass
 import argparse
 import csv
 import math
+import socket
 import sys
 import threading
 import time
 
 from kaf_link import DEFAULT_IP, DEFAULT_DRONE_ID, KafLink
-
-
-class Pose:
-    def __init__(self, frame, x, y, z, yaw, stamp):
-        self.frame = frame          # Vicon frame number
-        self.x, self.y, self.z = x, y, z  # metres, Vicon world
-        self.yaw = yaw              # rad, rotation of the object about world Z (CCW +)
-        self.stamp = stamp          # time.perf_counter() when received
+from udp_pose import MAX_POSE_AGE, UDP_PORT, Pose, UdpSource, encode_pose
 
 
 def quaternion_yaw(qx, qy, qz, qw):
@@ -195,28 +191,54 @@ def fmt(v):
     return "   ---" if v is None or math.isnan(v) else f"{v:+6.2f}"
 
 
+def positive_number(value):
+    number = float(value)
+    if not math.isfinite(number) or number <= 0:
+        raise argparse.ArgumentTypeError("must be a finite number greater than zero")
+    return number
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("mode", choices=("vicon", "monitor", "bridge"))
+    parser.add_argument("mode", choices=("vicon", "monitor", "bridge", "relay"))
     parser.add_argument("--vicon", default="localhost", help="Vicon PC IP (port 801 assumed)")
     parser.add_argument("--object", default="waar1", help="object name in Vicon Tracker")
     parser.add_argument("--fake", action="store_true", help="synthetic Vicon data, no Vicon PC needed")
     parser.add_argument("--drone-ip", default=DEFAULT_IP)
+    parser.add_argument("--drone-port", type=int, default=70, help="TCP port (normally 70)")
     parser.add_argument("--drone-id", default=DEFAULT_DRONE_ID, help="kafenv.info.deviceID of the drone")
-    parser.add_argument("--rate", type=float, default=100.0, help="COM_SET_MOCAP send rate, Hz")
-    parser.add_argument("--state-rate", type=float, default=10.0, help="drone state request rate, Hz")
+    parser.add_argument("--rate", type=positive_number, default=100.0, help="pose send rate, Hz")
+    parser.add_argument("--state-rate", type=positive_number, default=10.0, help="drone state request rate, Hz")
+    parser.add_argument("--pi-ip", help="relay mode: Pi IPv4 address (UDP destination)")
+    parser.add_argument("--udp-source", help="receive poses from this PC IPv4 address instead of the Vicon SDK")
+    parser.add_argument("--udp-bind", default="0.0.0.0", help="local UDP receive interface")
+    parser.add_argument("--udp-port", type=int, default=UDP_PORT)
+    parser.add_argument("--duration", type=positive_number, help="stop after this many seconds (default: until Ctrl+C)")
     parser.add_argument("--yaw-offset-deg", type=float, default=0.0,
                         help="Vicon-world yaw of the drone's frame (rotate Vicon data by minus this)")
     parser.add_argument("--log", help="CSV file to record Vicon and drone state")
     args = parser.parse_args()
+    if args.mode == "relay" and not args.pi_ip:
+        parser.error("relay requires --pi-ip")
+    if args.udp_source and (args.fake or args.mode == "relay"):
+        parser.error("--udp-source cannot be combined with --fake or relay mode")
+    if not 1 <= args.udp_port <= 65535 or not 1 <= args.drone_port <= 65535:
+        parser.error("ports must be between 1 and 65535")
+    if len(args.drone_id) != 1 or ord(args.drone_id) > 255:
+        parser.error("--drone-id must be one byte")
+    if not math.isfinite(args.yaw_offset_deg):
+        parser.error("--yaw-offset-deg must be finite")
 
-    vicon = ViconSource(args.vicon, args.object, fake=args.fake)
+    vicon = (UdpSource(args.udp_source, args.udp_bind, args.udp_port) if args.udp_source
+             else ViconSource(args.vicon, args.object, fake=args.fake))
     vicon.start()
+    relay = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) if args.mode == "relay" else None
+    relay_address = (socket.gethostbyname(args.pi_ip), args.udp_port) if relay else None
     drone = None
-    if args.mode != "vicon":
-        print(f"Connecting to drone at {args.drone_ip}:70 ...")
+    if args.mode in ("monitor", "bridge"):
+        print(f"Connecting to drone at {args.drone_ip}:{args.drone_port} ...")
         try:
-            drone = KafLink(args.drone_ip, drone_id=args.drone_id)
+            drone = KafLink(args.drone_ip, port=args.drone_port, drone_id=args.drone_id)
         except OSError as exc:
             vicon.stop()
             sys.exit(f"Could not reach the drone at {args.drone_ip}:70 ({exc}).\n"
@@ -245,29 +267,41 @@ def main():
     sent_count = 0
     start = time.perf_counter()
     warned_firmware = False
+    last_drone_send = -math.inf
 
     try:
         while True:
             if vicon.error:
                 sys.exit(f"Vicon error: {vicon.error}")
             now = time.perf_counter()
+            if args.duration is not None and now - start >= args.duration:
+                break
             pose = vicon.get()
-            fresh = pose is not None and (now - pose.stamp) < 0.1
+            fresh = pose is not None and 0 <= (now - pose.stamp) < MAX_POSE_AGE
             drone_pose = to_drone_frame(pose, yaw_offset) if pose else None
 
             sent = False
             if now >= next_send:
                 # never catch up with a burst - back-to-back packets merge on the drone and get lost
                 next_send = max(next_send + send_period, now + send_period / 2)
-                if args.mode == "bridge" and fresh and pose.frame != last_sent_frame:
+                if (args.mode in ("bridge", "relay") and fresh and pose.frame != last_sent_frame
+                        and (not drone or now - last_drone_send >= 0.003)):
                     last_sent_frame = pose.frame
                     sequence += 1
-                    drone.send_mocap(sequence, *drone_pose)
+                    if relay:
+                        # Send the original world frame; the Pi applies the yaw offset once.
+                        relay.sendto(encode_pose(pose), relay_address)
+                    else:
+                        drone.send_mocap(sequence, *drone_pose)
+                        last_drone_send = now
                     sent = True
                     sent_count += 1
-            if drone and now >= next_state:
+            # Scheduler stalls can erase the initial half-period offset. Keep an
+            # actual minimum gap so telemetry isn't written immediately after mocap.
+            if drone and now >= next_state and now - last_drone_send >= 0.003:
                 next_state = max(next_state + state_period, now + state_period / 2)
                 drone.request_state()
+                last_drone_send = now
             if drone:
                 drone.poll()
                 if (args.mode == "bridge" and not warned_firmware and drone.mocap_failures > 20
@@ -279,7 +313,7 @@ def main():
             new_frame = pose is not None and pose.frame != last_logged_frame
             if new_frame:
                 last_logged_frame = pose.frame
-            if log and (sent or (args.mode != "bridge" and new_frame)):
+            if log and (sent or (args.mode not in ("bridge", "relay") and new_frame)):
                 log.writerow([f"{now - start:.4f}", pose.frame if pose else "",
                               *(f"{v:.4f}" for v in (drone_pose or (math.nan,) * 4)), int(sent),
                               *(f"{v:.4f}" for v in ((*state.x, *state.v, state.yaw) if state else (math.nan,) * 7))])
@@ -287,7 +321,8 @@ def main():
             if now - last_print >= 0.5:
                 last_print = now
                 if pose is None:
-                    print(f"waiting for Vicon object '{args.object}' ...")
+                    suffix = f" (UDP rejected={vicon.rejected}; check clocks/source IP)" if args.udp_source else ""
+                    print(f"waiting for Vicon object '{args.object}' ...{suffix}")
                 else:
                     vx, vy, vz, vyaw = drone_pose
                     rate, gap = vicon.stats()
@@ -306,6 +341,10 @@ def main():
                         line += " | drone: no state reply yet"
                     if args.mode == "bridge":
                         line += f" | sent {sent_count} ok {drone.mocap_acks} fail {drone.mocap_failures}"
+                    elif relay:
+                        line += f" | relayed {sent_count}"
+                    if args.udp_source:
+                        line += f" | udp rejected {vicon.rejected}"
                     print(line)
             time.sleep(0.001)
     except KeyboardInterrupt:
@@ -315,6 +354,8 @@ def main():
         vicon.stop()
         if drone:
             drone.close()
+        if relay:
+            relay.close()
         if log_file:
             log_file.close()
 

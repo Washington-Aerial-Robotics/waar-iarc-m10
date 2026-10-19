@@ -53,3 +53,15 @@ _autosave-*
 
 # Local WiFi router credentials for the drone (see wifi_credentials.h.example)
 ESP32/KAF_Drone/src/firmware/wifi_credentials.h
+
+# Local test environments, logs and disk images
+.venv/
+.build/
+__pycache__/
+.pytest_cache/
+*.pyc
+*.img
+*.img.xz
+*.img.gz
+deploy/raspberry-pi/*.env
+logs/

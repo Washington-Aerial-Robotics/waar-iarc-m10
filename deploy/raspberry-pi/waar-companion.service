@@ -1,0 +1,25 @@
+[Unit]
+Description=WAAR single-drone Vicon companion (never arms the drone)
+Wants=network-online.target time-sync.target
+After=network-online.target time-sync.target
+
+[Service]
+Type=simple
+User=waar
+Group=waar
+EnvironmentFile=/etc/waar-single-drone.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/bin/bash /opt/waar/repo/deploy/raspberry-pi/run-companion.sh
+WorkingDirectory=/opt/waar/repo
+Restart=on-failure
+RestartSec=3
+KillSignal=SIGINT
+TimeoutStopSec=5
+StateDirectory=waar
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
