@@ -1,4 +1,5 @@
 #include "estimation.h"
+#include "mocap.h"
 #include "common_data.h"
 #include "../core/firmware.h"
 #include "../core/flight.h"
@@ -118,6 +119,11 @@ bool estimation_step( coordinate* estimate ) {
 }
 
 bool estimation_positionValid() {
+  //firmware_vicon replaces GPS/baro with motion capture as the position source - every mode-entry guard
+  //and the commander_step() position failsafe check this one function, so they follow Vicon freshness too
+  if( mocap_isActive() ) {
+    return mocap_positionValid();
+  }
   return SENSOR_BUFFER.gps.originSet
       && SENSOR_BUFFER.gps.lastFixMillis != 0
       && ( millis() - SENSOR_BUFFER.gps.lastFixMillis ) <= GPS_STALE_MS;

@@ -13,6 +13,9 @@ static void* memcpy( void* dest, const void* src, size_t count );
 static double sqrt( double arg );
 static float sqrtf( float arg );
 static float expf( float arg );
+static float fabsf( float arg );
+static float asinf( float arg );
+static float floorf( float arg );
 #else
 #include <string.h>
 #include <math.h>
@@ -27,11 +30,66 @@ static float expf( float arg );
 #define TUNING_MODE_SIML       8
 #define TUNING_MODE_EXIT       9
 
+//Physical relay (Astrom-Hagglund) autotune of one body-rate loop (kafenv.cal.wpid[axis]) - meant for a test
+//rig that lets only that axis rotate (gimbal with the other axes locked). Holds a collective throttle, bang-bangs
+//the axis torque between +-relay around zero rate, measures the resulting limit cycle (amplitude a, period Tu),
+//then Ku = 4*relay / ( pi * sqrt( a^2 - h^2 ) ) and Tyreus-Luyben gains. Results are only reported - the laptop
+//(tests/relay_autotune.py) decides whether to apply and save them.
+#define RELAY_PHASE_IDLE      0
+#define RELAY_PHASE_ARMING    1 //motors at zero while the ESCs arm (ESC_ARM_FRAMES in periph_esc.cpp)
+#define RELAY_PHASE_SPINUP    2 //collective ramps to the configured throttle, no relay yet
+#define RELAY_PHASE_RELAY     3 //relay running, measuring
+#define RELAY_PHASE_SPINDOWN  4 //reserved - the relay now stops the motors immediately (see relayStep())
+#define RELAY_PHASE_DONE      5 //result valid
+#define RELAY_PHASE_ABORTED   6 //see RELAY_ABORT_* in status.abortReason
+#define RELAY_ABORT_NONE      0
+#define RELAY_ABORT_ANGLE     1 //axis angle passed cfg.maxAngle
+#define RELAY_ABORT_RATE      2 //axis rate passed cfg.maxRate
+#define RELAY_ABORT_LINK      3 //no COM_REQUEST_RELAYTUNE poll for RELAY_LINK_TIMEOUT_MS
+#define RELAY_ABORT_NOCYCLE   4 //too few clean oscillation cycles before cfg.duration ran out
+#define RELAY_ABORT_GROWTH    5 //oscillation kept growing - wrong torque sign or rig not constraining the axis
+#define RELAY_ABORT_COMMAND   6 //laptop sent TUNING_MODE_EXIT
+#define RELAY_ARM_TIME        2.5F    //s - longer than ESC_ARM_FRAMES at 100 Hz
+#define RELAY_SPINUP_TIME     2.0F    //s
+#define RELAY_LINK_TIMEOUT_MS 1000UL
+#define RELAY_SKIP_CYCLES     2       //first cycles are transient - not used in the average
+#define RELAY_TARGET_CYCLES   6       //measured cycles averaged after the skipped ones
+#define RELAY_GROWTH_LIMIT    3.0F    //abort if a cycle's amplitude exceeds this multiple of the first one
+
 #define TUNER_SET0( D, N ) for( unsigned char N = 0; N < sizeof( D ) / sizeof( double ); N++ ) D[N] = 0
 #define TUNER_ITRVEC13( N ) for( unsigned char N = 0; N < 13; N++ )
 #define TUNER_TOSENSOR( S, C ) ITRVEC3( i ) S.f[i] = S.f[i] * C[i].gain + C[i].ofst
 #define TUNER_ADJUSTVAL( A, R, M ) ( M * ( 1 - expf( R - A ) ) )
 #define TUNER_GRAVITY 9.806
+
+//COM_SET_PIDTUNING payload when mode == TUNING_MODE_START_PHYS - must match RELAY_COMMAND in
+//tests/relay_autotune.py (little-endian, packed)
+#pragma pack( push, 1 )
+struct relaycommand {
+  STDBYTE mode;                //TUNING_MODE_START_PHYS
+  STDBYTE axis;                //0 = w.x, 1 = w.y, 2 = w.z (yaw) - also the wpid[] index being tuned
+  float relay;                 //relay torque amplitude b, in the attitude mixer's units (fraction of thrust)
+  float hysteresis;            //relay switching band h around zero rate, rad/s
+  float throttle;              //collective thrust held during the test, same units as kafenv.cal.hoverThrust
+  float maxAngle;              //rad - abort if the axis tilts further than this
+  float maxRate;               //rad/s - abort if the axis spins faster than this
+  float duration;              //s - max relay time before giving up
+};
+struct relaystatus {
+  STDBYTE phase;               //RELAY_PHASE_*
+  STDBYTE axis;
+  STDBYTE cycles;              //measured (post-skip) cycles so far
+  STDBYTE abortReason;         //RELAY_ABORT_*
+  float elapsed;               //s in the current phase
+  float rate;                  //rad/s, current axis rate
+  float angle;                 //rad, current axis angle (yaw: relative to start)
+  float output;                //current relay output
+  float amplitude;             //rad/s, averaged oscillation amplitude a
+  float period;                //s, averaged oscillation period Tu
+  float Ku;                    //ultimate gain
+  float Kp, Ki, Kd;            //Tyreus-Luyben gains for kafenv.cal.wpid[axis]
+};
+#pragma pack( pop )
 
 struct {
   struct {
@@ -62,7 +120,17 @@ struct {
     double accel[3];
     bool constrained[13];
   } sim;
-  struct {
+  struct {                     //relay autotune - not persisted, so the EEPROM layout is unchanged
+    relaycommand cfg;
+    relaystatus status;
+    float output;              //current relay torque, +-cfg.relay
+    float yawStart;            //q.z at relay start, yaw angle is reported relative to it
+    float cycleTime;           //s since the last switch to negative output (one full cycle)
+    float cycleMax, cycleMin;  //rate extremes within the current cycle
+    float firstAmplitude;      //first measured cycle's amplitude, for RELAY_ABORT_GROWTH
+    float sumAmplitude, sumPeriod;
+    unsigned char seenCycles;  //all completed cycles including skipped ones
+    volatile unsigned long lastPollMillis;
   } phys;
   struct {
     float overshootDX;
@@ -286,6 +354,171 @@ void pindtuner_simulationState( double matrix[13] ) {
   }
 }
 
+#define RELAY_PI 3.14159265359F
+#define RELAY_S2 1.41421356237F
+
+static bool relayActive() {
+  const STDBYTE phase = pidtuner.phys.status.phase;
+  return phase >= RELAY_PHASE_ARMING && phase <= RELAY_PHASE_SPINDOWN;
+}
+
+static bool relayCommandValid( const relaycommand* cmd ) {
+  return cmd->axis <= 2 && isfinite( cmd->relay ) && cmd->relay > 0 && cmd->relay <= 0.2F &&
+      isfinite( cmd->hysteresis ) && cmd->hysteresis >= 0 && cmd->hysteresis < 1 &&
+      isfinite( cmd->throttle ) && cmd->throttle >= 0 && cmd->throttle <= 0.6F &&
+      isfinite( cmd->maxAngle ) && cmd->maxAngle > 0 && cmd->maxAngle <= RELAY_PI && //yaw may swing far
+      isfinite( cmd->maxRate ) && cmd->maxRate > 0 && cmd->maxRate <= 10 &&
+      isfinite( cmd->duration ) && cmd->duration > 0 && cmd->duration <= 60;
+}
+
+//collective + one-axis torque through the same mixing as flight_attitudeControl() in flight.cpp - keep in sync
+static void relayMotors( const float st, const float u ) {
+  float sp[3] = { 0, 0, 0 };
+  sp[ pidtuner.phys.cfg.axis ] = u;
+  const float m[4] = { st + sp[0] - sp[1] - sp[2], st + sp[0] + sp[1] + sp[2],
+                       st - sp[0] - sp[1] + sp[2], st - sp[0] + sp[1] - sp[2] };
+  for( unsigned char i = 0; i < 4; i++ ) {
+    kafenv.cmd.motors[i] = sqrtf( m[i] < 0 ? 0 : ( m[i] > 1 ? 1 : m[i] ) );
+  }
+}
+
+//immediate stop - motors off, disarmed, tuner exits (TUNING_MODE_EXIT restores the previous flight state)
+static void relayFinish( const STDBYTE phase, const STDBYTE reason ) {
+  FPFILL0( i, kafenv.cmd.motors );
+  kafenv.info.actuation = false;
+  pidtuner.phys.status.phase = phase;
+  pidtuner.phys.status.abortReason = reason;
+  pidtuner.phys.status.output = 0;
+  pidtuner.tuningMode = TUNING_MODE_EXIT;
+  DPRINTF( "[T] Relay Autotune Finished: Phase=%u, Reason=%u, Ku=%.4f, Tu=%.3f, Kp=%.4f, Ki=%.4f, Kd=%.5f\n", phase, reason,
+      pidtuner.phys.status.Ku, pidtuner.phys.status.period, pidtuner.phys.status.Kp, pidtuner.phys.status.Ki, pidtuner.phys.status.Kd );
+}
+
+//averages the measured cycles into Ku/Tu and Tyreus-Luyben gains - false if the oscillation was too small to use
+static bool relayCompute() {
+  relaystatus* s = &pidtuner.phys.status;
+  if( s->cycles == 0 ) {
+    return false;
+  }
+  const float a = pidtuner.phys.sumAmplitude / s->cycles;
+  const float h = pidtuner.phys.cfg.hysteresis;
+  s->amplitude = a;
+  s->period = pidtuner.phys.sumPeriod / s->cycles;
+  if( a <= 1.05F * h || s->period <= 0 ) {
+    return false;
+  }
+  s->Ku = 4 * pidtuner.phys.cfg.relay / ( RELAY_PI * sqrtf( a * a - h * h ) );
+  //Tyreus-Luyben: Kc = Ku/2.2, Ti = 2.2 Tu, Td = Tu/6.3 - less overshoot than Ziegler-Nichols. pidStep() in
+  //flight.cpp is parallel form ( Kp*e + Ki*integral + Kd*derivative ), so Ki = Kc/Ti and Kd = Kc*Td.
+  s->Kp = s->Ku / 2.2F;
+  s->Ki = s->Kp / ( 2.2F * s->period );
+  s->Kd = s->Kp * s->period / 6.3F;
+  return true;
+}
+
+static void relayStep( imu* mpu ) {
+  relaystatus* s = &pidtuner.phys.status;
+  const relaycommand* cfg = &pidtuner.phys.cfg;
+  const float dt = mpu->timeStep;
+  flight_attitudeEstimate( mpu ); //flight_step() does nothing in ACTUATION_MODE, so the estimate runs here
+  const float w = kafenv.state.w.f[ cfg->axis ];
+  float angle;
+  if( cfg->axis < 2 ) {
+    //q.x/q.y are sqrt(2)*sin(angle/2) about body x/y - see the "/ S2" in flight_attitudeEstimate()'s print
+    float half = kafenv.state.q.f[ cfg->axis ] / RELAY_S2;
+    half = half > 1 ? 1 : ( half < -1 ? -1 : half );
+    angle = 2 * asinf( half );
+  } else {
+    angle = kafenv.state.q.z - pidtuner.phys.yawStart; //q.z is integrated unbounded, so wrap to [-pi, pi)
+    angle -= 2 * RELAY_PI * floorf( ( angle + RELAY_PI ) / ( 2 * RELAY_PI ) );
+  }
+  s->rate = w;
+  s->angle = angle;
+  s->elapsed += dt;
+  if( millis() - pidtuner.phys.lastPollMillis > RELAY_LINK_TIMEOUT_MS ) {
+    relayFinish( RELAY_PHASE_ABORTED, RELAY_ABORT_LINK );
+    return;
+  }
+  if( s->phase == RELAY_PHASE_SPINUP || s->phase == RELAY_PHASE_RELAY ) {
+    if( fabsf( angle ) > cfg->maxAngle ) {
+      relayFinish( RELAY_PHASE_ABORTED, RELAY_ABORT_ANGLE );
+      return;
+    }
+    if( fabsf( w ) > cfg->maxRate ) {
+      relayFinish( RELAY_PHASE_ABORTED, RELAY_ABORT_RATE );
+      return;
+    }
+  }
+  switch( s->phase ) {
+    case RELAY_PHASE_ARMING : {
+      FPFILL0( i, kafenv.cmd.motors );
+      kafenv.info.actuation = true;
+      if( s->elapsed >= RELAY_ARM_TIME ) {
+        s->phase = RELAY_PHASE_SPINUP;
+        s->elapsed = 0;
+      }
+      break;
+    }
+    case RELAY_PHASE_SPINUP : {
+      relayMotors( cfg->throttle * s->elapsed / RELAY_SPINUP_TIME, 0 );
+      if( s->elapsed >= RELAY_SPINUP_TIME ) {
+        s->phase = RELAY_PHASE_RELAY;
+        s->elapsed = 0;
+        pidtuner.phys.output = w > 0 ? -cfg->relay : cfg->relay;
+        pidtuner.phys.cycleTime = -1; //first cycle starts at the first switch to negative output
+      }
+      break;
+    }
+    case RELAY_PHASE_RELAY : {
+      //relay with hysteresis around zero rate: push against the current rotation direction
+      if( pidtuner.phys.output > 0 && w > cfg->hysteresis ) {
+        pidtuner.phys.output = -cfg->relay;
+        if( pidtuner.phys.cycleTime >= 0 ) { //one full cycle since the previous switch to negative
+          const float amp = 0.5F * ( pidtuner.phys.cycleMax - pidtuner.phys.cycleMin );
+          if( pidtuner.phys.firstAmplitude <= 0 ) {
+            pidtuner.phys.firstAmplitude = amp;
+          } else if( amp > RELAY_GROWTH_LIMIT * pidtuner.phys.firstAmplitude ) {
+            relayFinish( RELAY_PHASE_ABORTED, RELAY_ABORT_GROWTH );
+            return;
+          }
+          if( ++pidtuner.phys.seenCycles > RELAY_SKIP_CYCLES ) {
+            pidtuner.phys.sumAmplitude += amp;
+            pidtuner.phys.sumPeriod += pidtuner.phys.cycleTime;
+            s->cycles++;
+          }
+        }
+        pidtuner.phys.cycleTime = 0;
+        pidtuner.phys.cycleMax = -1e9F;
+        pidtuner.phys.cycleMin = 1e9F;
+      } else if( pidtuner.phys.output < 0 && w < -cfg->hysteresis ) {
+        pidtuner.phys.output = cfg->relay;
+      }
+      if( pidtuner.phys.cycleTime >= 0 ) {
+        pidtuner.phys.cycleTime += dt;
+        pidtuner.phys.cycleMax = w > pidtuner.phys.cycleMax ? w : pidtuner.phys.cycleMax;
+        pidtuner.phys.cycleMin = w < pidtuner.phys.cycleMin ? w : pidtuner.phys.cycleMin;
+      }
+      s->output = pidtuner.phys.output;
+      relayMotors( cfg->throttle, pidtuner.phys.output );
+      if( s->cycles >= RELAY_TARGET_CYCLES || s->elapsed >= cfg->duration ) {
+        //stop straight away rather than ramping down: nothing holds the axis level once the relay ends, and a
+        //top-heavy drone (CoM above the gimbal pivot) tips over while the props wind down - the ESC ramp
+        //(ESC_RAMP in periph_esc.cpp) already takes ~0.2 s to bring the motors to zero
+        if( relayCompute() ) {
+          relayFinish( RELAY_PHASE_DONE, RELAY_ABORT_NONE );
+        } else {
+          relayFinish( RELAY_PHASE_ABORTED, RELAY_ABORT_NOCYCLE );
+        }
+        return;
+      }
+      break;
+    }
+    default : {
+      relayFinish( RELAY_PHASE_ABORTED, RELAY_ABORT_COMMAND );
+    }
+  }
+}
+
 peripheral pidtuner_reset() {
   DPRINTF( "[T] Resetting PID Tuner\n" );
   pidtuner.tuningMode = TUNING_MODE_NONE;
@@ -327,9 +560,30 @@ peripheral pidtuner_reset() {
     STDBYTE mode = *( ( STDBYTE* )content );
     if( mode != TUNING_MODE_START_SIM && mode != TUNING_MODE_START_PHYS && mode != TUNING_MODE_START_SIML && mode != TUNING_MODE_EXIT ) {
       *response = NULLPTR;
+      return ( unsigned short )0;
+    }
+    if( mode == TUNING_MODE_START_PHYS ) {
+      //relay autotune: needs its full parameter block, must not start over another tune or while armed
+      const relaycommand* cmd = ( const relaycommand* )content;
+      if( len < sizeof( relaycommand ) || !relayCommandValid( cmd ) || pidtuner.tuningMode != TUNING_MODE_NONE || kafenv.info.actuation ) {
+        DPRINTF( "[T] Relay Autotune Start Rejected: Len=%u, Mode=%u, Armed=%u\n", len, pidtuner.tuningMode, kafenv.info.actuation );
+        *response = NULLPTR;
+        return ( unsigned short )0;
+      }
+      memcpy( &pidtuner.phys.cfg, cmd, sizeof( relaycommand ) );
+      memset( &pidtuner.phys.status, 0, sizeof( relaystatus ) );
+      pidtuner.phys.status.phase = RELAY_PHASE_ARMING;
+      pidtuner.phys.status.axis = cmd->axis;
+      pidtuner.phys.lastPollMillis = millis();
     }
     pidtuner.tuningMode = mode;
     return ( unsigned short )0;
+  }, []( const void* content, const packet_header header ) { } );
+  //relay autotune status poll - every poll also feeds the link watchdog (RELAY_LINK_TIMEOUT_MS)
+  com_receiveMessage( COM_REQUEST_RELAYTUNE, 0, []( void** response, const void* content, const unsigned short len ) {
+    pidtuner.phys.lastPollMillis = millis();
+    memcpy( *response, &pidtuner.phys.status, sizeof( relaystatus ) );
+    return ( unsigned short )sizeof( relaystatus );
   }, []( const void* content, const packet_header header ) { } );
   com_receiveMessage( COM_SET_SIM_VARS, sizeof( pidtuner.persist.sim ), 
       []( void** response, const void* content, const unsigned short len ) {
@@ -512,20 +766,30 @@ void pidtuner_step( void* imuData ) {
       break;
     }
     case TUNING_MODE_PHYS : {
-      DPRINTF( "[T] Physical PID Tuning Mode: Step=%u\n", pidtuner.tuningStep );
-      switch( pidtuner.tuningStep ) {
-        default : {
-          DPRINTF( "[T] Exiting Physical PID Tuner\n" );
-          kafenv.info.flightMode = CMD_NULL_MODE | NULL_MODE;
-          pidtuner.tuningMode = TUNING_MODE_EXIT;
-          commander_setTrajectories( FLIGHTPATH_LAND, NULLPTR );
-        }
+      if( pidtuner.tuningStep == 0 ) {
+        DPRINTF( "[T] Relay Autotune Start: Axis=%u, Relay=%.3f, Hyst=%.3f, Throttle=%.3f, MaxAngle=%.2f, MaxRate=%.2f\n",
+            pidtuner.phys.cfg.axis, pidtuner.phys.cfg.relay, pidtuner.phys.cfg.hysteresis, pidtuner.phys.cfg.throttle,
+            pidtuner.phys.cfg.maxAngle, pidtuner.phys.cfg.maxRate );
+        //CMD_NULL_MODE keeps commander_step()'s crash/disconnect/position failsafes out of the rig test, and
+        //ACTUATION_MODE makes flight_step() leave kafenv.cmd.motors to relayStep()
+        kafenv.info.flightMode = CMD_NULL_MODE | ACTUATION_MODE;
+        pidtuner.phys.yawStart = kafenv.state.q.z;
+        pidtuner.phys.firstAmplitude = 0;
+        pidtuner.phys.sumAmplitude = 0;
+        pidtuner.phys.sumPeriod = 0;
+        pidtuner.phys.seenCycles = 0;
+        pidtuner.phys.output = 0;
+        pidtuner.tuningStep = 1;
       }
-      kafenv.info.actuation = true;
+      relayStep( mpu );
       break;
     }
     case TUNING_MODE_EXIT : {
       DPRINTF( "[T] PID Tuning Exit\n" );
+      if( relayActive() ) { //exit requested by the laptop mid-run
+        relayFinish( RELAY_PHASE_ABORTED, RELAY_ABORT_COMMAND );
+      }
+      FPFILL0( i, kafenv.cmd.motors );
       flight_positionEstimator( pidtuner.previousEstimator );
       pidtuner.tuningMode = TUNING_MODE_NONE;
       pidtuner.tuningStep = 0;

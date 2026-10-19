@@ -11,7 +11,10 @@
 #define BOUND( V, LB, UB )    V = V > UB ? UB : ( V < LB ? LB : V )
 #define ESC_DSHOT_MODE      DSHOT300
 #define ESC_BIDIRECTIONAL      false
-#define ESC_RAMP                0.1F    // max throttle percent change per loop iteration
+#define ESC_RAMP                2.0F    // max throttle percent change per loop iteration (~200%/s @ 100Hz) -
+                                        // was 0.1F (10%/s, carried over from the PWM-era 1us/loop), far too
+                                        // slow for the attitude loop to stabilize a free-flying drone. 2.0F
+                                        // matches the original PWM-era 20us/loop ramp.
 #define ESC_ARM_FRAMES           200    // zero-throttle frames before ESCs are considered armed (~2s @ 100Hz flight loop, see FLIGHT_TASK_PERIOD_MS in periph_freertos.cpp)
 
 static struct {

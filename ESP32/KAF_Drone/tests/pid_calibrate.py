@@ -68,7 +68,9 @@ def fetch_all(ip: str) -> list[float]:
 
 
 def set_field(ip: str, index: int, value: float) -> None:
-    url = f"http://{ip}/cmd?SCAL={index}${value}"
+    # periph_webserver.cpp's SCAL handler switches on a type letter before the index ('c' = kafenv.cal,
+    # 'p'/'v' = state) - without it the value is silently ignored
+    url = f"http://{ip}/cmd?SCAL=c{index}${value}"
     with urllib.request.urlopen(url, timeout=5) as resp:
         resp.read()
 

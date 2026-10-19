@@ -65,6 +65,10 @@
 #define COM_SET_FORMATIONSLOT ( COM_CMD | 37 )//commander - phone-set 0-3, before a Qualification launch
 #define COM_SET_QUALCOMMAND  ( COM_CMD | 38 )//commander - QUALCMD_LAUNCH/BEGIN_ORBIT/HOLD/LAND/ABORT
 #define COM_SET_SQUARECOMMAND ( COM_CMD | 39 )//commander - SQUARECMD_START/LAND/ABORT
+#define COM_SET_MOCAP        ( COM_CMD | 40 )//mocap - external motion-capture (Vicon) position, ~100 Hz from
+                                              //tests/vicon/vicon_link.py, only handled by firmware_vicon
+#define COM_REQUEST_RELAYTUNE ( COM_CMD | 41 )//pid_tuner - relay autotune status/result poll, also the
+#define COM_REPLY_RELAYTUNE  (       0 | 41 )//pid_tuner   tune's link watchdog (tests/relay_autotune.py)
 //50-59 communication method specific messages
 #define COM_RANGING_1        ( COM_CMD | 50 )//dw3000
 #define COM_RANGING_2        ( COM_CMD | 51 )//dw3000
