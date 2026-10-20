@@ -4,6 +4,7 @@
 string  task_id         # unique: "<announcer_id>_<seq>"
 string  task_type       # "VERIFY_TAG" | "RESCAN" | "BECOME_PATH_VERIFIER" | "BECOME_VERIFIER"
 string  announcer_id
+string  mine_id         # source mine for verification tasks; empty for role tasks
 float64 target_x        # world frame target (if applicable)
 float64 target_y
 float32 priority        # higher = more urgent [0.0, 1.0]

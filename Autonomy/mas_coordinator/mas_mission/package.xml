@@ -10,7 +10,9 @@
 
   <depend>rclpy</depend>
   <depend>mas_interfaces</depend>
+  <depend>mas_sync</depend>
   <depend>std_msgs</depend>
+  <depend>geometry_msgs</depend>
   <depend>nav_msgs</depend>
   <depend>builtin_interfaces</depend>
 

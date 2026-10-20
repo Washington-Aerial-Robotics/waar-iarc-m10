@@ -103,9 +103,18 @@ class TestAuctionManager:
 
     def test_duplicate_announce_ignored(self):
         mgr = AuctionManager("d1")
-        mgr.on_announce(make_announce(task_id="t1"))
-        mgr.on_announce(make_announce(task_id="t1"))  # duplicate
+        assert mgr.on_announce(make_announce(task_id="t1")) is True
+        assert mgr.on_announce(make_announce(task_id="t1")) is False
         assert len(mgr._auctions) == 1
+
+    def test_claim_received_before_announce_is_applied(self):
+        mgr = AuctionManager("d2")
+        mgr.on_claim(make_claim(task_id="late_announce", bidder="d2", cost=1.0))
+        ann = make_announce(task_id="late_announce", window=0.01)
+        mgr.on_announce(ann)
+        time.sleep(0.05)
+        mgr.tick()
+        assert [task.task_id for task in mgr.pop_won_tasks()] == ["late_announce"]
 
     def test_pop_clears_won_list(self):
         mgr = AuctionManager("d1")
@@ -151,6 +160,10 @@ class TestComputeCost:
 
     def test_boot_state_returns_none(self):
         cost = self.mgr.compute_cost(self.announce, 0.0, 0.0, "BOOT", False)
+        assert cost is None
+
+    def test_unknown_state_returns_none(self):
+        cost = self.mgr.compute_cost(self.announce, 0.0, 0.0, "UNKNOWN", False)
         assert cost is None
 
     def test_busy_low_priority_returns_none(self):

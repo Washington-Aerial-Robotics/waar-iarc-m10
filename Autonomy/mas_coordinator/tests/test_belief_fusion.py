@@ -33,6 +33,11 @@ def make_entry(mine_id="m1", x=1.0, y=2.0, confidence=0.5,
 
 class TestMerge:
 
+    def test_invalid_confidence_is_rejected(self):
+        store = BeliefStore()
+        assert store.merge(make_entry(confidence=1.5)) is False
+        assert store.count() == 0
+
     def test_new_entry_is_stored(self):
         store = BeliefStore()
         entry = make_entry()
@@ -136,20 +141,20 @@ class TestMergeBatch:
 
 # ── get_delta_since ───────────────────────────────────────────────────────────
 
-class TestDelta:
+class TestAntiEntropySnapshot:
 
-    def test_delta_returns_newer_entries(self):
+    def test_snapshot_does_not_use_count_as_cursor(self):
         store = BeliefStore()
         for i in range(5):
             store.merge(make_entry(mine_id=f"m{i}", seq=i+1))
         delta = store.get_delta_since(known_count=3)
-        assert len(delta) == 2
+        assert len(delta) == 5
 
-    def test_delta_empty_when_fully_synced(self):
+    def test_equal_counts_still_exchange_versions(self):
         store = BeliefStore()
         store.merge(make_entry(mine_id="m1"))
         delta = store.get_delta_since(known_count=1)
-        assert len(delta) == 0
+        assert [entry.mine_id for entry in delta] == ["m1"]
 
 
 # ── candidates ────────────────────────────────────────────────────────────────

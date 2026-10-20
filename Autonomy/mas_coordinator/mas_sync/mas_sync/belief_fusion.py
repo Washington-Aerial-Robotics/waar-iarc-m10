@@ -11,7 +11,7 @@ Rules:
 """
 
 from __future__ import annotations
-from dataclasses import dataclass, field
+from dataclasses import dataclass, replace
 from typing import Dict, List, Optional
 import math
 
@@ -34,6 +34,7 @@ class BeliefStore:
     """
 
     STICKY_STATUSES = {"confirmed", "rejected"}
+    VALID_STATUSES = {"candidate", "confirmed", "rejected", "uncertain"}
 
     def __init__(self) -> None:
         # mine_id -> BeliefEntry
@@ -47,6 +48,13 @@ class BeliefStore:
         """
         Merge one incoming belief.  Returns True if the local store changed.
         """
+        if (not incoming.mine_id or incoming.status not in self.VALID_STATUSES or
+                incoming.seq < 0 or not math.isfinite(incoming.x) or
+                not math.isfinite(incoming.y) or
+                not math.isfinite(incoming.confidence) or
+                not 0.0 <= incoming.confidence <= 1.0):
+            return False
+
         existing = self._store.get(incoming.mine_id)
 
         if existing is None:
@@ -58,21 +66,24 @@ class BeliefStore:
             # Rule 3: confirmed is never downgraded to rejected (safety-first).
             # Also preserve sticky status when incoming is a non-sticky downgrade.
             if existing.status == "confirmed" and incoming.status == "rejected":
-                incoming.status = "confirmed"
+                incoming = replace(incoming, status="confirmed")
             elif (existing.status in self.STICKY_STATUSES and
                     incoming.status not in self.STICKY_STATUSES):
-                incoming.status = existing.status
+                incoming = replace(incoming, status=existing.status)
             self._store[incoming.mine_id] = incoming
             return True
 
         # Rule 2: equal seq — confirmed > rejected > candidate; then higher confidence
         if incoming.seq == existing.seq:
-            # confirmed beats rejected (safety-first: never discard a live mine)
-            if (incoming.status == "confirmed"
-                    and existing.status == "rejected"):
-                self._store[incoming.mine_id] = incoming
-                return True
-            if incoming.confidence > existing.confidence:
+            ranks = {
+                "candidate": 0,
+                "uncertain": 1,
+                "rejected": 2,
+                "confirmed": 3,
+            }
+            incoming_key = (ranks[incoming.status], incoming.confidence)
+            existing_key = (ranks[existing.status], existing.confidence)
+            if incoming_key > existing_key:
                 self._store[incoming.mine_id] = incoming
                 return True
 
@@ -90,14 +101,17 @@ class BeliefStore:
 
     def get_delta_since(self, known_count: int) -> List[BeliefEntry]:
         """
-        Simple delta: return all entries the sender probably doesn't have.
-        We use total count as a rough watermark.  For MVP this is fine.
-        A proper implementation would track per-peer seq cursors.
+        Return a safe anti-entropy snapshot.
+
+        A peer's total item count cannot identify which mine IDs or versions it
+        has.  Returning the full, deterministically ordered snapshot costs a
+        little bandwidth but guarantees convergence and is safe for the small
+        IARC mine set.  ``known_count`` remains in the wire contract for
+        compatibility and diagnostics only.
         """
         all_entries = self.all()
-        # Sort by seq descending so the freshest updates go first
-        all_entries.sort(key=lambda e: e.seq, reverse=True)
-        return all_entries[known_count:]  # everything beyond what they know
+        all_entries.sort(key=lambda e: e.mine_id)
+        return all_entries
 
     def count(self) -> int:
         return len(self._store)

@@ -35,7 +35,9 @@ def make_node(
     own_x=5.0, own_y=5.0,
     arena_w=30.0, arena_h=30.0,
     team_poses=None,
+    team_last_seen=None,
     own_pose_last_seen=None,
+    pose_timeout_s=POSE_STALE_S,
     pending_task_cmd=None,
     sm_state="SURVEY",
 ):
@@ -47,10 +49,15 @@ def make_node(
     node.arena_w             = arena_w
     node.arena_h             = arena_h
     node.team_poses          = team_poses if team_poses is not None else {}
+    node.team_last_seen      = (
+        team_last_seen if team_last_seen is not None
+        else {did: time.monotonic() for did in node.team_poses}
+    )
     node.own_pose_last_seen  = (
         own_pose_last_seen if own_pose_last_seen is not None
         else time.monotonic()
     )
+    node.pose_timeout_s      = pose_timeout_s
     node.pending_task_cmd    = pending_task_cmd
     node.sm.state            = sm_state
     return node
@@ -115,11 +122,16 @@ class TestPrioritySelector:
 
 class TestCollisionGuardNode:
 
+    def test_does_not_compare_zero_pose_before_localization(self):
+        node = make_node(team_poses={"d2": (0.1, 0.1)})
+        node.own_pose_last_seen = None
+        assert CollisionGuardNode().tick(node) == BTStatus.FAILURE
+
     def test_success_when_neighbor_within_r_collision(self):
         # Neighbor 0.5 m away; R_COLLISION = 0.8 m
         node = make_node(own_x=5.0, own_y=5.0, team_poses={"d2": (5.5, 5.0)})
         assert CollisionGuardNode().tick(node) == BTStatus.SUCCESS
-        assert '"HOLD"' in published_cmd(node)
+        assert '"HOLD_POSITION"' in published_cmd(node)
 
     def test_failure_when_no_neighbor_within_r_collision(self):
         # Neighbor ~7 m away
@@ -143,6 +155,59 @@ class TestCollisionGuardNode:
                          team_poses={"d2": (R_COLLISION - 0.01, 0.0)})
         assert CollisionGuardNode().tick(node) == BTStatus.SUCCESS
 
+    def test_stale_neighbor_pose_holds_instead_of_using_old_distance(self):
+        fixed_now = 1000.0
+        node = make_node(
+            team_poses={"d2": (20.0, 20.0)},
+            team_last_seen={"d2": fixed_now - POSE_STALE_S - 0.001},
+            own_pose_last_seen=fixed_now,
+        )
+        with patch("mas_mission.bt_runner.time.monotonic", return_value=fixed_now):
+            result = CollisionGuardNode().tick(node)
+
+        assert result == BTStatus.SUCCESS
+        assert '"neighbor_pose_stale"' in published_cmd(node)
+        assert '"neighbor_id": "d2"' in published_cmd(node)
+
+    def test_missing_neighbor_timestamp_is_treated_as_stale(self):
+        fixed_now = 1000.0
+        node = make_node(
+            team_poses={"d2": (20.0, 20.0)},
+            team_last_seen={},
+            own_pose_last_seen=fixed_now,
+        )
+        with patch("mas_mission.bt_runner.time.monotonic", return_value=fixed_now):
+            result = CollisionGuardNode().tick(node)
+
+        assert result == BTStatus.SUCCESS
+        assert '"neighbor_pose_stale"' in published_cmd(node)
+
+    def test_stale_own_pose_is_deferred_to_failure_monitor(self):
+        fixed_now = 1000.0
+        node = make_node(
+            team_poses={"d2": (5.1, 5.0)},
+            team_last_seen={"d2": fixed_now},
+            own_pose_last_seen=fixed_now - POSE_STALE_S - 0.001,
+        )
+        with patch("mas_mission.bt_runner.time.monotonic", return_value=fixed_now):
+            result = CollisionGuardNode().tick(node)
+
+        assert result == BTStatus.FAILURE
+        node._publish_cmd.assert_not_called()
+
+    def test_neighbor_pose_at_freshness_boundary_is_used(self):
+        fixed_now = 1000.0
+        node = make_node(
+            team_poses={"d2": (20.0, 20.0)},
+            team_last_seen={"d2": fixed_now - POSE_STALE_S},
+            own_pose_last_seen=fixed_now,
+        )
+        with patch("mas_mission.bt_runner.time.monotonic", return_value=fixed_now):
+            result = CollisionGuardNode().tick(node)
+
+        assert result == BTStatus.FAILURE
+        node._publish_cmd.assert_not_called()
+
 
 # ── GeofenceGuardNode ─────────────────────────────────────────────────────────
 
@@ -151,7 +216,8 @@ class TestGeofenceGuardNode:
     def test_success_when_x_negative(self):
         node = make_node(own_x=-0.1, own_y=5.0)
         assert GeofenceGuardNode().tick(node) == BTStatus.SUCCESS
-        assert '"RETURN_TO_BOUNDS"' in published_cmd(node)
+        assert '"HOLD_POSITION"' in published_cmd(node)
+        assert '"outside_geofence"' in published_cmd(node)
 
     def test_success_when_x_exceeds_arena_w(self):
         node = make_node(own_x=30.1, own_y=5.0, arena_w=30.0)
@@ -180,10 +246,18 @@ class TestGeofenceGuardNode:
 
 class TestFailureMonitorNode:
 
+    def test_unavailable_pose_holds_position(self):
+        node = make_node()
+        node.own_pose_last_seen = None
+        assert FailureMonitorNode().tick(node) == BTStatus.SUCCESS
+        assert '"HOLD_POSITION"' in published_cmd(node)
+        assert '"pose_unavailable"' in published_cmd(node)
+
     def test_success_when_pose_is_stale(self):
         node = make_node(own_pose_last_seen=time.monotonic() - (POSE_STALE_S + 1.0))
         assert FailureMonitorNode().tick(node) == BTStatus.SUCCESS
-        assert '"FAILSAFE"' in published_cmd(node)
+        assert '"HOLD_POSITION"' in published_cmd(node)
+        assert '"pose_stale"' in published_cmd(node)
 
     def test_failure_when_pose_is_fresh(self):
         node = make_node(own_pose_last_seen=time.monotonic() - 0.1)
@@ -272,7 +346,7 @@ class TestPriorityOrderIntegration:
         result = self._full_tree().tick(node)
 
         assert result == BTStatus.SUCCESS
-        assert '"HOLD"' in published_cmd(node)
+        assert '"HOLD_POSITION"' in published_cmd(node)
         assert node.pending_task_cmd == cmd   # not consumed
 
     def test_geofence_fires_task_executor_never_runs(self):
@@ -288,7 +362,7 @@ class TestPriorityOrderIntegration:
         result = self._full_tree().tick(node)
 
         assert result == BTStatus.SUCCESS
-        assert '"RETURN_TO_BOUNDS"' in published_cmd(node)
+        assert '"HOLD_POSITION"' in published_cmd(node)
         assert node.pending_task_cmd == cmd   # not consumed
 
     def test_all_guards_clear_exploration_policy_runs(self):
