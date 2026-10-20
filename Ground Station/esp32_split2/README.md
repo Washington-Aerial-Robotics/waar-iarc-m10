@@ -1,4 +1,8 @@
+> **Kent compatibility update:** The app now targets local `origin/Firmware-Kent` commit `416ac12`. See [KENT_INTEGRATION.md](KENT_INTEGRATION.md) for current protocol and controls. Older protocol/control descriptions below are historical and are superseded by that document.
+
 # Flutter Drone Controller GUI
+
+See [APP_GUIDE.md](APP_GUIDE.md) for the current high-level file map, control behavior, voice phrases, and limitations.
 
 ## Overview
 
@@ -159,7 +163,7 @@ S,42,0.600,-0.120,0.300,0.000
 Transmission rate:
 
 ```text
-50 Hz (every 20 ms)
+4 Hz (every 250 ms); validate the required rate against the deployed firmware.
 ```
 
 ---
@@ -215,3 +219,9 @@ lib/
 
 This project is being developed as a **real-time drone control GUI prototype** to be used by Washington 
 Aerial Robotics. 
+
+## Field deployment notes
+
+The app uses binary commands defined in `ESP32/KAF_Drone/src/communication.h` in this repository. Confirm that the flashed firmware uses that protocol before testing. ARM starts local motor transmission; DISARM sends zero motor setpoints followed by null mode. Neither action currently waits for firmware acknowledgement. HOVER is disabled until onboard altitude hold is integrated. Voice recognition requests on-device processing and requires supported speech services and downloaded language data; test with internet disconnected on each device.
+
+See [DESIGN_QUESTIONS.md](DESIGN_QUESTIONS.md) for current answers and recommendations about the app’s design questions.

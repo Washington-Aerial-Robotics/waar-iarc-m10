@@ -4,14 +4,14 @@ import 'package:flutter/material.dart';
 /// Beta Remote screen for experimenting with the controller UI.
 ///
 /// Responsibilities:
-/// - Mirrors the Remote Control screen layout for testing and iteration.
+/// - Provides two movable joysticks in portrait and landscape.
 /// - Shows the same telemetry-style readouts driven by joystick interaction.
-/// - Includes the same center HUD controls (ARM/DISARM/KILL) for UI parity.
+/// - Holds all values locally, independently of the live controller.
 /// - Does not need an active drone connection; behavior can be simulated.
 ///
 /// This screen is intended as a sandbox for new UI ideas before merging them
 /// into the production Remote Control screen.
-/// NO LONGER IN APP UI AS OF 4/16/2026
+/// Local preview only: never sends commands to a drone.
 
 class BetaRemotePreview extends StatefulWidget {
   const BetaRemotePreview({super.key});
@@ -37,257 +37,58 @@ class _BetaRemotePreviewState extends State<BetaRemotePreview> {
 
   @override
   Widget build(BuildContext context) {
-    final isLandscape =
-        MediaQuery.of(context).orientation == Orientation.landscape;
-
-    // In case this page sits under a parent BottomNavigationBar
-    final bottomNavClearance =
-        kBottomNavigationBarHeight + MediaQuery.of(context).padding.bottom;
-
-    String telemetryInline() =>
-        'thr=${throttle.toStringAsFixed(2)}   '
-        'yaw=${yaw.toStringAsFixed(2)}   '
-        'pit=${pitch.toStringAsFixed(2)}   '
-        'rol=${roll.toStringAsFixed(2)}';
-
-    List<String> telemetryLines() => [
-          'thr=${throttle.toStringAsFixed(2)}',
-          'yaw=${yaw.toStringAsFixed(2)}',
-          'pit=${pitch.toStringAsFixed(2)}',
-          'rol=${roll.toStringAsFixed(2)}',
-        ];
-
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Beta Remote'),
-        centerTitle: true,
-      ),
+      appBar: AppBar(title: const Text('Beta joystick preview')),
       body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, c) {
-            const pad = 8.0;
-
-            if (isLandscape) {
-              final topH = (c.maxHeight * 0.26).clamp(86.0, 130.0);
-              final bottomH = max(
-                0.0,
-                c.maxHeight - topH - pad - bottomNavClearance,
-              );
-
-              final hudW = (c.maxWidth * 0.22).clamp(210.0, 300.0);
-
-              final availableW = max(0.0, c.maxWidth - hudW - pad * 2 - 16);
-              final eachStickW = availableW / 2;
-
-              final stickSize =
-                  min(eachStickW, bottomH - 34).clamp(150.0, 460.0);
-
-              return Padding(
-                padding: EdgeInsets.fromLTRB(
-                  pad,
-                  pad,
-                  pad,
-                  pad + bottomNavClearance,
-                ),
-                child: Column(
-                  children: [
-                    _TelemetryStrip(connected: true, text: telemetryInline()),
-                    const SizedBox(height: 8),
-                    Expanded(
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          SizedBox(
-                            width: stickSize,
-                            child: _Stick(
-                              size: stickSize,
-                              label: 'Throttle / Yaw',
-                              onChanged: (x, y) {
-                                final thr = ((y + 1) / 2).clamp(0.0, 1.0);
-                                setSticks(t: thr, y: x);
-                              },
-                              onRelease: () => setSticks(t: 0.0, y: 0.0),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Center(
-                              child: _HudPanelWithButtons(
-                                width: hudW,
-                                telemetry: telemetryLines(),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          SizedBox(
-                            width: stickSize,
-                            child: _Stick(
-                              size: stickSize,
-                              label: 'Pitch / Roll',
-                              onChanged: (x, y) => setSticks(r: x, p: y),
-                              onRelease: () => setSticks(r: 0.0, p: 0.0),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }
-
-            // Portrait: telemetry top + sticks below
-            final stickSize = min(
-              (c.maxWidth - pad * 2 - 12) / 2,
-              c.maxHeight - 140 - bottomNavClearance,
-            ).clamp(170.0, 420.0);
-
-            return Padding(
-              padding: EdgeInsets.fromLTRB(pad, pad, pad, pad + bottomNavClearance),
-              child: Column(
-                children: [
-                  _TelemetryStrip(connected: true, text: telemetryInline()),
-                  const SizedBox(height: 10),
-                  Expanded(
-                    child: Align(
-                      alignment: Alignment.bottomCenter,
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          SizedBox(
-                            width: stickSize,
-                            child: _Stick(
-                              size: stickSize,
-                              label: 'Throttle / Yaw',
-                              onChanged: (x, y) {
-                                final thr = ((y + 1) / 2).clamp(0.0, 1.0);
-                                setSticks(t: thr, y: x);
-                              },
-                              onRelease: () => setSticks(t: 0.0, y: 0.0),
-                            ),
-                          ),
-                          SizedBox(
-                            width: stickSize,
-                            child: _Stick(
-                              size: stickSize,
-                              label: 'Pitch / Roll',
-                              onChanged: (x, y) => setSticks(r: x, p: y),
-                              onRelease: () => setSticks(r: 0.0, p: 0.0),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
-        ),
-      ),
-    );
-  }
-}
-
-class _TelemetryStrip extends StatelessWidget {
-  const _TelemetryStrip({required this.connected, required this.text});
-  final bool connected;
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.04),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.black12),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            connected ? Icons.wifi : Icons.wifi_off,
-            color: connected ? Colors.green : Colors.orange,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              text,
-              style: const TextStyle(fontFamily: 'monospace'),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _HudPanelWithButtons extends StatelessWidget {
-  const _HudPanelWithButtons({
-    required this.width,
-    required this.telemetry,
-  });
-
-  final double width;
-  final List<String> telemetry;
-
-  @override
-  Widget build(BuildContext context) {
-    return ConstrainedBox(
-      constraints: BoxConstraints.tightFor(width: width),
-      child: Card(
-        elevation: 2,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Buttons (disabled in Beta)
-                Row(children: [
-                  Expanded(child: ElevatedButton(onPressed: null, child: const Text('ARM'))),
-                ]),
-                const SizedBox(height: 8),
-                Row(children: [
-                  Expanded(child: ElevatedButton(onPressed: null, child: const Text('DISARM'))),
-                ]),
-                const SizedBox(height: 8),
-                Row(children: [
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: null,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.red,
-                        foregroundColor: Colors.white,
-                        disabledBackgroundColor: Colors.red.withOpacity(0.35),
-                        disabledForegroundColor: Colors.white70,
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            children: [
+              const Text('Local preview — no drone commands are sent.'),
+              const SizedBox(height: 8),
+              Text(
+                'thr=${throttle.toStringAsFixed(2)}  yaw=${yaw.toStringAsFixed(2)}  '
+                'pit=${pitch.toStringAsFixed(2)}  rol=${roll.toStringAsFixed(2)}',
+                style: const TextStyle(fontFamily: 'monospace'),
+              ),
+              const SizedBox(height: 12),
+              Expanded(
+                child: LayoutBuilder(
+                  builder: (context, bounds) {
+                    final labelHeight =
+                        MediaQuery.textScalerOf(context).scale(20) + 12;
+                    final size = max(
+                      1.0,
+                      min(
+                        320.0,
+                        min(
+                          (bounds.maxWidth - 20) / 2,
+                          bounds.maxHeight - labelHeight,
+                        ),
                       ),
-                      child: const Text('KILL'),
-                    ),
-                  ),
-                ]),
-                const SizedBox(height: 10),
-
-                // Telemetry box
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.04),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.black12),
-                  ),
-                  child: Text(
-                    telemetry.join('\n'),
-                    style: const TextStyle(fontFamily: 'monospace', fontSize: 14),
-                  ),
+                    );
+                    return Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        _Stick(
+                          size: size,
+                          label: 'Throttle / Yaw',
+                          onChanged: (x, y) => setSticks(t: (y + 1) / 2, y: x),
+                          onRelease: () => setSticks(t: 0, y: 0),
+                        ),
+                        _Stick(
+                          size: size,
+                          label: 'Pitch / Roll',
+                          onChanged: (x, y) => setSticks(r: x, p: y),
+                          onRelease: () => setSticks(r: 0, p: 0),
+                        ),
+                      ],
+                    );
+                  },
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -295,7 +96,6 @@ class _HudPanelWithButtons extends StatelessWidget {
   }
 }
 
-/// Stick: easy grab + springs to center
 class _Stick extends StatefulWidget {
   const _Stick({
     required this.size,
@@ -351,6 +151,10 @@ class _StickState extends State<_Stick> {
           behavior: HitTestBehavior.opaque,
           onPanDown: (d) => setFromLocal(d.localPosition),
           onPanUpdate: (d) => setFromLocal(d.localPosition),
+          onPanCancel: () {
+            widget.onRelease();
+            setState(() => _pos = Offset.zero);
+          },
           onPanEnd: (_) {
             widget.onRelease();
             setState(() => _pos = Offset.zero);
@@ -365,8 +169,18 @@ class _StickState extends State<_Stick> {
             ),
             child: Stack(
               children: [
-                Positioned(left: r - 1, top: 0, bottom: 0, child: Container(width: 2, color: Colors.black12)),
-                Positioned(top: r - 1, left: 0, right: 0, child: Container(height: 2, color: Colors.black12)),
+                Positioned(
+                  left: r - 1,
+                  top: 0,
+                  bottom: 0,
+                  child: Container(width: 2, color: Colors.black12),
+                ),
+                Positioned(
+                  top: r - 1,
+                  left: 0,
+                  right: 0,
+                  child: Container(height: 2, color: Colors.black12),
+                ),
                 Positioned(
                   left: r + _pos.dx - knobR,
                   top: r + _pos.dy - knobR,

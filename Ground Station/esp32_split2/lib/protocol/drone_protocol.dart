@@ -2,43 +2,41 @@ import 'dart:typed_data';
 
 class DroneComms {
   static const int headerLen = 4;
+  static const int comSetActuation = 0x4A;
 
-  static const int comCmd = 0x40 ;
+  static const int comCmd = 0x40;
   static const int comFwd = 0x80;
 
-  static const int comSuccess = 0x3A;
-  static const int comFailure = 0x3B;
-  static const int comAcknowledged = 0x3C;
+  static const int comSuccess = 0x3C;
+  static const int comFailure = 0x3D;
+  static const int comAcknowledged = 0x3E;
 
   static const int comPing = 0x40;
   static const int comPong = 0x00;
 
   static const int comSetCtrlMode = 0x4C;
   static const int comSetPosCmd = 0x4F;
-  static const int comSetMotorCmd = 0x40 | 16;
+  static const int comSetMotorCmd = 0x50;
 
   static const int comRequestWifi = 0x61;
-  static const int comReplyWifi = 0x17;
+  static const int comReplyWifi = 0x21;
 
-  static const int comSetWifi = 0x58;
-  static const int comReplySetWifi = 0x18;
+  static const int comSetWifi = 0x62;
+  static const int comReplySetWifi = comSuccess;
 
-  static const int comKill = 0x40 | 35;
+  static const int comKill = 0x63;
 
-  static const int comRequestPos = 0x63;
-  static const int comReplyPos = 0x23;
+  static const int comRequestPos = 0x42;
+  static const int comReplyPos = 0x02;
 
-  static const int comRequestAtt = 0x65;
-  static const int comReplyAtt = 0x25;
-
-  static const int comRequestStateEst = 0x61;
-  static const int comReplyStateEst = 0x21;
+  static const int comRequestStateEst = 0x44;
+  static const int comReplyStateEst = 0x04;
 
   static const int nullMode = 0x00;
-  static const int calibrationMode = 0x01;
-  static const int motorSetpointMode = 0x02;
-  static const int posSetpointMode = 0x03;
-  static const int trajectoryMode = 0x04;
+  static const int calibrationMode = 0x02;
+  static const int motorSetpointMode = 0x04;
+  static const int posSetpointMode = 0x06;
+  static const int trajectoryMode = 0x07;
 }
 
 class DronePacket {
@@ -70,10 +68,7 @@ class DronePacket {
 }
 
 class DronePacketBuilder {
-  DronePacketBuilder({
-    required this.fromId,
-    required this.defaultToId,
-  });
+  DronePacketBuilder({required this.fromId, required this.defaultToId});
 
   final int fromId;
   final int defaultToId;
@@ -86,11 +81,7 @@ class DronePacketBuilder {
     return id;
   }
 
-  Uint8List headerOnly({
-    required int messageType,
-    int? toId,
-    int? messageId,
-  }) {
+  Uint8List headerOnly({required int messageType, int? toId, int? messageId}) {
     return build(
       toId: toId ?? defaultToId,
       messageType: messageType,
@@ -109,27 +100,46 @@ class DronePacketBuilder {
   }
 
   Uint8List motor4Floats({
-  required double m0,
-  required double m1,
-  required double m2,
-  required double m3,
-  int? toId,
-  int? messageId,
-}) {
-  final bd = ByteData(16);
+    required double m0,
+    required double m1,
+    required double m2,
+    required double m3,
+    int? toId,
+    int? messageId,
+  }) {
+    final bd = ByteData(16);
 
-  bd.setFloat32(0, m0.clamp(0.0, 1.0), Endian.little);
-  bd.setFloat32(4, m1.clamp(0.0, 1.0), Endian.little);
-  bd.setFloat32(8, m2.clamp(0.0, 1.0), Endian.little);
-  bd.setFloat32(12, m3.clamp(0.0, 1.0), Endian.little);
+    bd.setFloat32(0, m0.clamp(0.0, 1.0), Endian.little);
+    bd.setFloat32(4, m1.clamp(0.0, 1.0), Endian.little);
+    bd.setFloat32(8, m2.clamp(0.0, 1.0), Endian.little);
+    bd.setFloat32(12, m3.clamp(0.0, 1.0), Endian.little);
 
-  return build(
-    toId: toId ?? defaultToId,
-    messageType: DroneComms.comSetMotorCmd,
-    payload: bd.buffer.asUint8List(),
-    messageId: messageId ?? nextMessageId(),
-  );
-}
+    return build(
+      toId: toId ?? defaultToId,
+      messageType: DroneComms.comSetMotorCmd,
+      payload: bd.buffer.asUint8List(),
+      messageId: messageId ?? nextMessageId(),
+    );
+  }
+
+  Uint8List setpoints(List<double> values, {int? toId, int? mode}) {
+    if (values.length > 22 || values.any((v) => !v.isFinite)) {
+      throw ArgumentError('Kent supports up to 22 finite setpoints');
+    }
+    final offset = mode == null ? 1 : 2;
+    final data = ByteData(offset + 4 * values.length);
+    if (mode != null) data.setUint8(0, mode);
+    data.setUint8(offset - 1, values.length);
+    for (var i = 0; i < values.length; i++) {
+      data.setFloat32(offset + i * 4, values[i], Endian.little);
+    }
+    return build(
+      toId: toId ?? defaultToId,
+      messageType: mode == null ? 0x4F : 0x4C,
+      payload: data.buffer.asUint8List(),
+      messageId: nextMessageId(),
+    );
+  }
 
   Uint8List singleByte({
     required int messageType,
@@ -195,5 +205,36 @@ class DronePacketBuilder {
       messageId: bytes[3],
       payload: Uint8List.sublistView(bytes, DroneComms.headerLen),
     );
+  }
+}
+
+/// Only enabled reply types are accepted. Unknown layouts fail closed rather
+/// than guessing boundaries in an unframed TCP stream.
+class KentReplyDecoder {
+  final List<int> _buffer = [];
+  void clear() => _buffer.clear();
+  List<DronePacket> add(List<int> bytes) {
+    _buffer.addAll(bytes);
+    final packets = <DronePacket>[];
+    while (_buffer.length >= 4) {
+      final payloadSize = switch (_buffer[2]) {
+        0x00 || 0x3C || 0x3D || 0x3E || 0x3F => 0,
+        0x02 => 13,
+        0x21 => 20,
+        0x04 => 48,
+        _ => throw FormatException(
+          'Unsupported Kent reply type: ${_buffer[2]}',
+        ),
+      };
+      final length = 4 + payloadSize;
+      if (_buffer.length < length) break;
+      packets.add(
+        DronePacketBuilder.tryParse(
+          Uint8List.fromList(_buffer.sublist(0, length)),
+        )!,
+      );
+      _buffer.removeRange(0, length);
+    }
+    return packets;
   }
 }

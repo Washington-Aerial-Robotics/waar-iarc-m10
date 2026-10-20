@@ -79,7 +79,7 @@ class VoiceCommandController extends ChangeNotifier {
           listenMode: ListenMode.confirmation,
           partialResults: true,
           cancelOnError: true,
-          onDevice: false,
+          onDevice: true,
           autoPunctuation: false,
           listenFor: const Duration(seconds: 6),
           pauseFor: const Duration(seconds: 2),
@@ -136,9 +136,7 @@ class VoiceCommandController extends ChangeNotifier {
   }
 
   void _handleResult(SpeechRecognitionResult result) {
-    _recognizedText = result.recognizedWords
-        .trim()
-        .toLowerCase();
+    _recognizedText = result.recognizedWords.trim().toLowerCase();
 
     notifyListeners();
 
@@ -152,118 +150,78 @@ class VoiceCommandController extends ChangeNotifier {
   void _executeCommand(String phrase) {
     final normalized = phrase
         .toLowerCase()
-        .replaceAll(
-          RegExp(r'[^a-z0-9\s]'),
-          ' ',
-        )
-        .replaceAll(
-          RegExp(r'\s+'),
-          ' ',
-        )
+        .replaceAll(RegExp(r'[^a-z0-9\s]'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
 
-    if (_matches(
-      normalized,
-      const [
-        'rotate left',
-        'turn left',
-        'yaw left',
-      ],
-    )) {
+    if (_matches(normalized, const ['rotate left', 'turn left', 'yaw left'])) {
       droneController.voiceRotateLeft();
       _lastCommand = 'rotate left';
-    } else if (_matches(
-      normalized,
-      const [
-        'rotate right',
-        'turn right',
-        'yaw right',
-      ],
-    )) {
+    } else if (_matches(normalized, const [
+      'rotate right',
+      'turn right',
+      'yaw right',
+    ])) {
       droneController.voiceRotateRight();
       _lastCommand = 'rotate right';
-    } else if (_matches(
-      normalized,
-      const [
-        'move forward',
-        'go forward',
-        'forward',
-      ],
-    )) {
+    } else if (_matches(normalized, const [
+      'move forward',
+      'go forward',
+      'forward',
+    ])) {
       droneController.voiceForward();
       _lastCommand = 'forward';
-    } else if (_matches(
-      normalized,
-      const [
-        'move backward',
-        'go backward',
-        'backward',
-        'back',
-      ],
-    )) {
+    } else if (_matches(normalized, const [
+      'move backward',
+      'go backward',
+      'backward',
+      'back',
+    ])) {
       droneController.voiceBackward();
       _lastCommand = 'backward';
-    } else if (_matches(
-      normalized,
-      const [
-        'move left',
-        'slide left',
-        'strafe left',
-      ],
-    )) {
+    } else if (_matches(normalized, const [
+      'move left',
+      'slide left',
+      'strafe left',
+    ])) {
       droneController.voiceMoveLeft();
       _lastCommand = 'move left';
-    } else if (_matches(
-      normalized,
-      const [
-        'move right',
-        'slide right',
-        'strafe right',
-      ],
-    )) {
+    } else if (_matches(normalized, const [
+      'move right',
+      'slide right',
+      'strafe right',
+    ])) {
       droneController.voiceMoveRight();
       _lastCommand = 'move right';
-    } else if (_matches(
-      normalized,
-      const [
-        'hover',
-        'maintain altitude',
-        'hold altitude',
-      ],
-    )) {
+    } else if (_matches(normalized, const [
+      'hover',
+      'maintain altitude',
+      'hold altitude',
+    ])) {
       droneController.voiceHover();
       _lastCommand = 'hover';
-    } else if (_matches(
-      normalized,
-      const [
-        'stop',
-        'hold',
-        'center controls',
-        'stop moving',
-      ],
-    )) {
+    } else if (_matches(normalized, const [
+      'stop',
+      'hold',
+      'center controls',
+      'stop moving',
+    ])) {
       droneController.voiceStop();
       _lastCommand = 'stop';
-    } else if (_matches(
-      normalized,
-      const [
-        'go up',
-        'move up',
-        'ascend',
-        'up',
-      ],
-    )) {
+    } else if (_matches(normalized, const [
+      'go up',
+      'move up',
+      'ascend',
+      'up',
+    ])) {
       droneController.voiceUp();
       _lastCommand = 'up';
-    } else if (_matches(
-      normalized,
-      const [
-        'go down',
-        'move down',
-        'descend',
-        'down',
-      ],
-    )) {
+    } else if (_matches(normalized, const [
+      'go down',
+      'move down',
+      'descend',
+      'down',
+    ])) {
       droneController.voiceDown();
       _lastCommand = 'down';
     } else {
@@ -273,13 +231,8 @@ class VoiceCommandController extends ChangeNotifier {
     notifyListeners();
   }
 
-  bool _matches(
-    String recognizedPhrase,
-    List<String> acceptedPhrases,
-  ) {
-    return acceptedPhrases.any(
-      (command) => recognizedPhrase == command,
-    );
+  bool _matches(String recognizedPhrase, List<String> acceptedPhrases) {
+    return acceptedPhrases.any((command) => recognizedPhrase == command);
   }
 
   @override

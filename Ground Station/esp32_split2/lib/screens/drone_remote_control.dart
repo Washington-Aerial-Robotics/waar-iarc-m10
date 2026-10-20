@@ -37,7 +37,7 @@ class DroneRemoteControl extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Remote Control'),
+        title: const Text('Kent motor bench control'),
         centerTitle: true,
       ),
       body: SafeArea(
@@ -46,88 +46,108 @@ class DroneRemoteControl extends StatelessWidget {
             const pad = 8.0;
 
             if (isLandscape) {
-              // -------- LANDSCAPE: Top telemetry + Bottom sticks + center HUD --------
-              // Give the top panel a fixed-ish chunk so it never gets covered.
-              final topH = (c.maxHeight * 0.28).clamp(86.0, 130.0);
-              final bottomH = max(0.0, c.maxHeight - topH - pad);
-
-              // Middle HUD width
-              final hudW = (c.maxWidth * 0.22).clamp(210.0, 300.0);
-
-              // Compute stick size from remaining width/height
-              final availableW = max(0.0, c.maxWidth - hudW - pad * 2 - 16);
-              final eachStickW = availableW / 2;
-              // Subtract label space so no overflow
-              final stickSize = min(eachStickW, bottomH - 34).clamp(160.0, 460.0);
-
               return Padding(
                 padding: const EdgeInsets.all(pad),
                 child: Column(
                   children: [
-                    // Top telemetry/status strip (never covered)
                     _TelemetryStrip(
                       connected: connected,
                       text: telemetryText(),
                     ),
                     const SizedBox(height: 8),
-
-                    // Bottom controller row fills remaining space
                     Expanded(
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          // Left stick flush left
-                          SizedBox(
-                            width: stickSize,
-                            child: _Stick(
-                              size: stickSize,
-                              label: 'Throttle / Yaw',
-                              enabled: connected,
-                              onChanged: (x, y) {
-                                final thr = ((y + 1) / 2).clamp(0.0, 1.0);
-                                ctrl.setSticks(t: thr, y: x);
-                              },
-                              onRelease: () => ctrl.setSticks(t: 0.0, y: 0.0),
+                      child: LayoutBuilder(
+                        builder: (context, available) {
+                          final labelHeight =
+                              MediaQuery.textScalerOf(context).scale(20) + 12;
+                          final stickSize = max(
+                            1.0,
+                            min(
+                              available.maxWidth * 0.25,
+                              available.maxHeight - labelHeight,
                             ),
-                          ),
-
-                          const SizedBox(width: 8),
-
-                          // Center HUD panel between sticks (scrollable if needed)
-                          Expanded(
-                            child: Center(
-                              child: _HudPanel(
-                                width: hudW,
-                                connected: connected,
-                                onArm: connected ? ctrl.arm : null,
-                                onDisarm: connected ? ctrl.disarm : null,
-                                onKill: connected ? ctrl.kill : null,
-                                telemetryMultiline: [
-                                  'thr=${ctrl.throttle.toStringAsFixed(2)}',
-                                  'yaw=${ctrl.yaw.toStringAsFixed(2)}',
-                                  'pit=${ctrl.pitch.toStringAsFixed(2)}',
-                                  'rol=${ctrl.roll.toStringAsFixed(2)}',
-                                ],
+                          );
+                          return Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              _Stick(
+                                size: stickSize,
+                                label: 'Throttle / Yaw',
+                                enabled: connected,
+                                onChanged: (x, y) {
+                                  final thr = ((y + 1) / 2).clamp(0.0, 1.0);
+                                  ctrl.setSticks(t: thr, y: x);
+                                },
+                                onRelease: () => ctrl.setSticks(t: 0, y: 0),
                               ),
-                            ),
-                          ),
-
-                          const SizedBox(width: 8),
-                          const SizedBox(height: 8),
-                          const VoiceControlPanel(),
-
-                          // Right stick flush right
-                          SizedBox(
-                            width: stickSize,
-                            child: _Stick(
-                              size: stickSize,
-                              label: 'Pitch / Roll',
-                              enabled: connected,
-                              onChanged: (x, y) => ctrl.setSticks(r: x, p: y),
-                              onRelease: () => ctrl.setSticks(r: 0.0, p: 0.0),
-                            ),
-                          ),
-                        ],
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: ElevatedButton(
+                                            onPressed: connected
+                                                ? ctrl.arm
+                                                : null,
+                                            style: ElevatedButton.styleFrom(
+                                              padding: EdgeInsets.zero,
+                                            ),
+                                            child: const Text('ARM'),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Expanded(
+                                          child: ElevatedButton(
+                                            onPressed: connected
+                                                ? ctrl.disarm
+                                                : null,
+                                            style: ElevatedButton.styleFrom(
+                                              padding: EdgeInsets.zero,
+                                            ),
+                                            child: const Text('DISARM'),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Expanded(
+                                          child: ElevatedButton(
+                                            onPressed: connected
+                                                ? ctrl.kill
+                                                : null,
+                                            style: ElevatedButton.styleFrom(
+                                              padding: EdgeInsets.zero,
+                                              backgroundColor: Colors.red,
+                                              foregroundColor: Colors.white,
+                                              disabledBackgroundColor: Colors
+                                                  .red
+                                                  .withValues(alpha: 0.35),
+                                            ),
+                                            child: const Text('KILL'),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 4),
+                                    const Expanded(
+                                      child: SingleChildScrollView(
+                                        child: VoiceControlPanel(),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              _Stick(
+                                size: stickSize,
+                                label: 'Pitch / Roll',
+                                enabled: connected,
+                                onChanged: (x, y) => ctrl.setSticks(r: x, p: y),
+                                onRelease: () => ctrl.setSticks(r: 0, p: 0),
+                              ),
+                            ],
+                          );
+                        },
                       ),
                     ),
                   ],
@@ -136,8 +156,10 @@ class DroneRemoteControl extends StatelessWidget {
             }
 
             // PORTRAIT: top panel + sticks row
-            final stickSize = min((c.maxWidth - pad * 2 - 12) / 2, c.maxHeight - 170)
-                .clamp(180.0, 420.0);
+            final stickSize = min(
+              (c.maxWidth - pad * 2 - 12) / 2,
+              c.maxHeight - 170,
+            ).clamp(180.0, 420.0);
 
             return Padding(
               padding: const EdgeInsets.all(pad),
@@ -145,7 +167,7 @@ class DroneRemoteControl extends StatelessWidget {
                 children: [
                   _PortraitTopPanel(
                     connected: connected,
-                    onArm: connected ? ctrl.arm : null,
+                    onArm: connected && !ctrl.controlPending ? ctrl.arm : null,
                     onDisarm: connected ? ctrl.disarm : null,
                     onKill: connected ? ctrl.kill : null,
                     telemetry: telemetryText(),
@@ -208,14 +230,16 @@ class _TelemetryStrip extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.04),
+        color: Colors.black.withValues(alpha: 0.04),
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: Colors.black12),
       ),
       child: Row(
         children: [
-          Icon(connected ? Icons.wifi : Icons.wifi_off,
-              color: connected ? Colors.green : Colors.orange),
+          Icon(
+            connected ? Icons.wifi : Icons.wifi_off,
+            color: connected ? Colors.green : Colors.orange,
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
@@ -226,102 +250,6 @@ class _TelemetryStrip extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _HudPanel extends StatelessWidget {
-  const _HudPanel({
-    required this.width,
-    required this.connected,
-    required this.onArm,
-    required this.onDisarm,
-    required this.onKill,
-    required this.telemetryMultiline,
-  });
-
-  final double width;
-  final bool connected;
-  final VoidCallback? onArm;
-  final VoidCallback? onDisarm;
-  final VoidCallback? onKill;
-  final List<String> telemetryMultiline;
-
-  @override
-  Widget build(BuildContext context) {
-    return ConstrainedBox(
-      constraints: BoxConstraints.tightFor(width: width),
-      child: Card(
-        elevation: 2,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
-          child: LayoutBuilder(
-            builder: (context, c) {
-              // Scroll if panel content doesn't fit (prevents overflow).
-              return SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (!connected)
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: Colors.amber.withOpacity(0.25),
-                          border: Border.all(color: Colors.amber),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Text(
-                          'Not connected',
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                    if (!connected) const SizedBox(height: 10),
-
-                    Row(children: [
-                      Expanded(child: ElevatedButton(onPressed: onArm, child: const Text('ARM'))),
-                    ]),
-                    const SizedBox(height: 8),
-                    Row(children: [
-                      Expanded(child: ElevatedButton(onPressed: onDisarm, child: const Text('DISARM'))),
-                    ]),
-                    const SizedBox(height: 8),
-                    Row(children: [
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: onKill,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.red,
-                            foregroundColor: Colors.white,
-                            disabledBackgroundColor: Colors.red.withOpacity(0.35),
-                            disabledForegroundColor: Colors.white70,
-                          ),
-                          child: const Text('KILL'),
-                        ),
-                      ),
-                    ]),
-                    const SizedBox(height: 10),
-
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.04),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.black12),
-                      ),
-                      child: Text(
-                        telemetryMultiline.join('\n'),
-                        style: const TextStyle(fontFamily: 'monospace', fontSize: 14),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
-        ),
       ),
     );
   }
@@ -351,7 +279,7 @@ class _PortraitTopPanel extends StatelessWidget {
             width: double.infinity,
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: Colors.amber.withOpacity(0.25),
+              color: Colors.amber.withValues(alpha: 0.25),
               border: Border.all(color: Colors.amber),
               borderRadius: BorderRadius.circular(10),
             ),
@@ -371,9 +299,16 @@ class _PortraitTopPanel extends StatelessWidget {
         if (!connected) const SizedBox(height: 10),
         Row(
           children: [
-            Expanded(child: ElevatedButton(onPressed: onArm, child: const Text('ARM'))),
+            Expanded(
+              child: ElevatedButton(onPressed: onArm, child: const Text('ARM')),
+            ),
             const SizedBox(width: 10),
-            Expanded(child: ElevatedButton(onPressed: onDisarm, child: const Text('DISARM'))),
+            Expanded(
+              child: ElevatedButton(
+                onPressed: onDisarm,
+                child: const Text('DISARM'),
+              ),
+            ),
             const SizedBox(width: 10),
             Expanded(
               child: ElevatedButton(
@@ -381,7 +316,7 @@ class _PortraitTopPanel extends StatelessWidget {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.red,
                   foregroundColor: Colors.white,
-                  disabledBackgroundColor: Colors.red.withOpacity(0.35),
+                  disabledBackgroundColor: Colors.red.withValues(alpha: 0.35),
                   disabledForegroundColor: Colors.white70,
                 ),
                 child: const Text('KILL'),
@@ -392,7 +327,10 @@ class _PortraitTopPanel extends StatelessWidget {
         const SizedBox(height: 8),
         Align(
           alignment: Alignment.centerLeft,
-          child: Text(telemetry, style: const TextStyle(fontFamily: 'monospace')),
+          child: Text(
+            telemetry,
+            style: const TextStyle(fontFamily: 'monospace'),
+          ),
         ),
       ],
     );
@@ -457,8 +395,18 @@ class _StickState extends State<_Stick> {
           opacity: widget.enabled ? 1.0 : 0.45,
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onPanDown: widget.enabled ? (d) => setFromLocal(d.localPosition) : null,
-            onPanUpdate: widget.enabled ? (d) => setFromLocal(d.localPosition) : null,
+            onPanDown: widget.enabled
+                ? (d) => setFromLocal(d.localPosition)
+                : null,
+            onPanUpdate: widget.enabled
+                ? (d) => setFromLocal(d.localPosition)
+                : null,
+            onPanCancel: widget.enabled
+                ? () {
+                    widget.onRelease();
+                    setState(() => _pos = Offset.zero);
+                  }
+                : null,
             onPanEnd: widget.enabled
                 ? (_) {
                     widget.onRelease();
@@ -475,8 +423,18 @@ class _StickState extends State<_Stick> {
               ),
               child: Stack(
                 children: [
-                  Positioned(left: r - 1, top: 0, bottom: 0, child: Container(width: 2, color: Colors.black12)),
-                  Positioned(top: r - 1, left: 0, right: 0, child: Container(height: 2, color: Colors.black12)),
+                  Positioned(
+                    left: r - 1,
+                    top: 0,
+                    bottom: 0,
+                    child: Container(width: 2, color: Colors.black12),
+                  ),
+                  Positioned(
+                    top: r - 1,
+                    left: 0,
+                    right: 0,
+                    child: Container(height: 2, color: Colors.black12),
+                  ),
                   Positioned(
                     left: r + _pos.dx - knobR,
                     top: r + _pos.dy - knobR,

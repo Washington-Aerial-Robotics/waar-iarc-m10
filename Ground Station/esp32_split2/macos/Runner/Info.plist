@@ -28,5 +28,11 @@
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Speech recognition interprets spoken drone control commands.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Microphone access lets you speak drone control commands.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>This app connects to an ESP32 drone on your local network.</string>
 </dict>
 </plist>

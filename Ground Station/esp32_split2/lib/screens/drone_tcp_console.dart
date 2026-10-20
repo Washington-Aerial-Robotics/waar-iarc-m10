@@ -15,13 +15,11 @@ class DroneTcpConsole extends StatefulWidget {
 }
 
 class _DroneTcpConsoleState extends State<DroneTcpConsole> {
-  final ipCtrl = TextEditingController(text: '172.20.10.8');
-  final portCtrl = TextEditingController(text: '80');
+  final ipCtrl = TextEditingController(text: '192.168.1.240');
+  final portCtrl = TextEditingController(text: '70');
 
   late TcpClient _client;
-  late final DronePacketBuilder _packetBuilder;
 
-  static const int _fromId = 0x47; // 'G'
   // static const int _toId = 0x42;   // 'B'
   final droneIdCtrl = TextEditingController(text: 'A');
 
@@ -37,11 +35,6 @@ class _DroneTcpConsoleState extends State<DroneTcpConsole> {
     final ctrl = context.read<DroneController>();
     droneIdCtrl.text = ctrl.targetDroneCharacter;
 
-    _packetBuilder = DronePacketBuilder(
-      fromId: DroneController.appDeviceId,
-      defaultToId: ctrl.targetDroneId,
-    );
-
     if (_client.isConnected) {
       _sub = _client.lines.listen(_append);
     }
@@ -54,7 +47,7 @@ class _DroneTcpConsoleState extends State<DroneTcpConsole> {
 
   Future<void> _connect() async {
     final ip = ipCtrl.text.trim();
-    final port = int.tryParse(portCtrl.text.trim()) ?? 1234;
+    final port = int.tryParse(portCtrl.text.trim()) ?? 70;
     final ctrl = context.read<DroneController>();
 
     setState(() => _connecting = true);
@@ -65,7 +58,11 @@ class _DroneTcpConsoleState extends State<DroneTcpConsole> {
       await _sub?.cancel();
       _sub = _client.lines.listen(_append);
 
-      _append('Controller connected');
+      _append(
+        ctrl.isConnected
+            ? 'TCP connected; use PING to verify Kent protocol'
+            : 'Connection failed: ${ctrl.lastError}',
+      );
     } catch (e) {
       _append('Connect failed: $e');
     } finally {
@@ -100,9 +97,7 @@ class _DroneTcpConsoleState extends State<DroneTcpConsole> {
       if (droneIdCtrl.text != normalized) {
         droneIdCtrl.value = TextEditingValue(
           text: normalized,
-          selection: TextSelection.collapsed(
-            offset: normalized.length,
-          ),
+          selection: TextSelection.collapsed(offset: normalized.length),
         );
       }
 
@@ -111,94 +106,24 @@ class _DroneTcpConsoleState extends State<DroneTcpConsole> {
   }
 
   void _sendPing() {
-    if (!_client.isConnected) {
-      _append('Not connected.');
-      return;
-    }
-
-    final ctrl = context.read<DroneController>();
-
-    final pkt = _packetBuilder.headerOnly(
-      messageType: DroneComms.comPing,
-      toId: ctrl.targetDroneId
+    context.read<DroneController>().requestDiagnostic(
+      DroneComms.comPing,
+      DroneComms.comPong,
     );
-
-    _client.sendBytes(pkt);
-    _append(_formatPacket(
-      'Sent COM_PING to ${ctrl.targetDroneCharacter}',
-      pkt,
-    ));
   }
 
   void _requestWifiIp() {
-    if (!_client.isConnected) {
-      _append('Not connected.');
-      return;
-    }
-
-    final ctrl = context.read<DroneController>();
-
-    final pkt = _packetBuilder.headerOnly(
-      messageType: DroneComms.comRequestWifi,
-      toId: ctrl.targetDroneId,
+    context.read<DroneController>().requestDiagnostic(
+      DroneComms.comRequestWifi,
+      DroneComms.comReplyWifi,
     );
-
-    _client.sendBytes(pkt);
-    _append(_formatPacket(
-      'Sent COM_REQUEST_WIFI to ${ctrl.targetDroneCharacter}',
-      pkt,
-    ));
   }
 
   void _requestPosition() {
-    if (!_client.isConnected) {
-      _append('Not connected.');
-      return;
-    }
-
-    final ctrl = context.read<DroneController>();
-
-    final pkt = _packetBuilder.headerOnly(
-      messageType: DroneComms.comRequestPos,
-      toId: ctrl.targetDroneId,
+    context.read<DroneController>().requestDiagnostic(
+      DroneComms.comRequestPos,
+      DroneComms.comReplyPos,
     );
-
-    _client.sendBytes(pkt);
-    _append(_formatPacket(
-      'Sent COM_REQUEST_POS to ${ctrl.targetDroneCharacter}',
-      pkt,
-    ));
-  }
-
-  void _sendTestControlBytes() {
-    if (!_client.isConnected) {
-      _append('Not connected.');
-      return;
-    }
-
-    final ctrl = context.read<DroneController>();
-
-    final pkt = _packetBuilder.motor4Floats(
-      m0: 0.5,
-      m1: 0.5,
-      m2: 0.5,
-      m3: 0.5,
-      toId: ctrl.targetDroneId,
-    );
-
-    _client.sendBytes(pkt);
-    _append(_formatPacket(
-      'Sent TEST CONTROL FLOATS to ${ctrl.targetDroneCharacter}',
-      pkt,
-    ));
-  }
-
-  String _formatPacket(String label, List<int> pkt) {
-    final hex = pkt
-        .map((b) => b.toRadixString(16).padLeft(2, '0').toUpperCase())
-        .join(' ');
-
-    return '$label: $hex';
   }
 
   @override
@@ -212,7 +137,8 @@ class _DroneTcpConsoleState extends State<DroneTcpConsole> {
 
   @override
   Widget build(BuildContext context) {
-    final connected = _client.isConnected;
+    final ctrl = context.watch<DroneController>();
+    final connected = ctrl.isConnected;
 
     return Scaffold(
       appBar: AppBar(
@@ -269,7 +195,7 @@ class _DroneTcpConsoleState extends State<DroneTcpConsole> {
                             child: OutlinedButton(
                               onPressed: _requestPosition,
                               child: const Text(
-                                'Get Pos',
+                                'Get State',
                                 style: TextStyle(fontSize: 18),
                               ),
                             ),
@@ -280,9 +206,9 @@ class _DroneTcpConsoleState extends State<DroneTcpConsole> {
                           child: SizedBox(
                             height: 56,
                             child: OutlinedButton(
-                              onPressed: _sendTestControlBytes,
+                              onPressed: null,
                               child: const Text(
-                                'Test Control',
+                                'Bench test via Remote',
                                 style: TextStyle(fontSize: 18),
                               ),
                             ),
@@ -296,14 +222,14 @@ class _DroneTcpConsoleState extends State<DroneTcpConsole> {
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
                     const SizedBox(height: 8),
-                    Expanded(child: LogView(lines: _log)),
+                    Expanded(child: LogView(lines: [...ctrl.log, ..._log])),
                   ],
                 ),
               ),
             );
 
             final rightPane = SingleChildScrollView(
-               child: ConnectPanel(
+              child: ConnectPanel(
                 ipCtrl: ipCtrl,
                 portCtrl: portCtrl,
                 droneIdCtrl: droneIdCtrl,

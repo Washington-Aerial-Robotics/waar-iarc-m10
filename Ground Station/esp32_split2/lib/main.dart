@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'controllers/drone_controller.dart';
 import 'controllers/voice_command_controller.dart';
 import 'screens/drone_remote_control.dart';
+import 'screens/beta_remote_preview.dart';
 import 'screens/drone_tcp_console.dart';
 import 'services/tcp_client.dart';
 
@@ -16,15 +17,12 @@ void main() {
           dispose: (_, client) => client.dispose(),
         ),
         ChangeNotifierProvider<DroneController>(
-          create: (context) => DroneController(
-            context.read<TcpClient>(),
-          ),
+          create: (context) => DroneController(context.read<TcpClient>()),
         ),
         ChangeNotifierProvider<VoiceCommandController>(
           create: (context) {
-            return VoiceCommandController(
-              context.read<DroneController>(),
-            )..initialize();
+            return VoiceCommandController(context.read<DroneController>())
+              ..initialize();
           },
         ),
       ],
@@ -34,9 +32,7 @@ void main() {
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({
-    super.key,
-  });
+  const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -48,9 +44,7 @@ class MyApp extends StatelessWidget {
 }
 
 class NavigationShell extends StatefulWidget {
-  const NavigationShell({
-    super.key,
-  });
+  const NavigationShell({super.key});
 
   @override
   State<NavigationShell> createState() {
@@ -58,22 +52,19 @@ class NavigationShell extends StatefulWidget {
   }
 }
 
-class _NavigationShellState
-    extends State<NavigationShell> {
+class _NavigationShellState extends State<NavigationShell> {
   int _index = 0;
 
   final List<Widget> _pages = const [
     DroneTcpConsole(),
     DroneRemoteControl(),
+    BetaRemotePreview(),
   ];
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: IndexedStack(
-        index: _index,
-        children: _pages,
-      ),
+      body: IndexedStack(index: _index, children: _pages),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
         onDestinationSelected: (index) {
@@ -82,13 +73,11 @@ class _NavigationShellState
           });
         },
         destinations: const [
+          NavigationDestination(icon: Icon(Icons.terminal), label: 'Console'),
+          NavigationDestination(icon: Icon(Icons.gamepad), label: 'Remote'),
           NavigationDestination(
-            icon: Icon(Icons.terminal),
-            label: 'Console',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.gamepad),
-            label: 'Remote',
+            icon: Icon(Icons.science_outlined),
+            label: 'Beta',
           ),
         ],
       ),
