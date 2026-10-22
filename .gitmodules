@@ -1,0 +1,3 @@
+[submodule "Software/trajectory_tracking/tinympc-python"]
+	path = Software/trajectory_tracking/tinympc-python
+	url = https://github.com/lolrenceH/tinympc-python.git
