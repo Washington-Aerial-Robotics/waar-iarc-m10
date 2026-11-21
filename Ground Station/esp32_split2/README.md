@@ -221,3 +221,7 @@ lib/
 ## Purpose
 
 This project is being developed as a **real-time drone control GUI prototype** to be used by Washington Aerial Robotics.
+
+## Mission controls
+
+See [MISSION_TESTING.md](MISSION_TESTING.md) for the QUAL/SQUARE Mission tab, firmware compatibility, confirmation behavior, and props-off test checklist.

@@ -28,6 +28,14 @@
 	<true/>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>This app connects to an ESP32 over the local network.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>
+	Voice control requires microphone access to recognize drone commands.
+	</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>
+	Speech recognition is used to interpret drone control commands.
+	</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -68,14 +76,5 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>
-	Voice control requires microphone access to recognize drone commands.
-	</string>
-
-	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>
-	Speech recognition is used to interpret drone control commands.
-	</string>
 </dict>
 </plist>

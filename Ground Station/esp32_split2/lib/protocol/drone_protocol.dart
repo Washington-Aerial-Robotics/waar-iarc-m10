@@ -3,7 +3,7 @@ import 'dart:typed_data';
 class DroneComms {
   static const int headerLen = 4;
 
-  static const int comCmd = 0x40 ;
+  static const int comCmd = 0x40;
   static const int comFwd = 0x80;
 
   // Status codes (COM_SUCCESS / COM_FAILURE / COM_ACKNOWLEDGED / COM_INVALID
@@ -24,8 +24,10 @@ class DroneComms {
   // Low 3 bits of the firmware's flightMode byte (flight.h DEFAULT_MODES_MASK)
   // - selects which flight_step() case governs kafenv.cmd.motors each tick.
   static const int flightModeNull = 0;
-  static const int flightModeActuation = 3; // pass-through: leaves cmd.motors alone, so COM_SET_MOTORS packets reach the ESCs
-  static const int flightModeMotorSetpoint = 4; // overwrites cmd.motors from cmd.setpoints every tick - NOT what COM_SET_MOTORS needs
+  static const int flightModeActuation =
+      3; // pass-through: leaves cmd.motors alone, so COM_SET_MOTORS packets reach the ESCs
+  static const int flightModeMotorSetpoint =
+      4; // overwrites cmd.motors from cmd.setpoints every tick - NOT what COM_SET_MOTORS needs
 
   // Upper 5 bits (commander.h CMD_MODE_MASK) - the commander state machine.
   // CMD_NULL_MODE skips commander_step()'s storage-read/failsafe logic entirely,
@@ -38,6 +40,28 @@ class DroneComms {
   static const int comSetWifi = 0x62;
 
   static const int comKill = 0x40 | 35;
+
+  // NEW COMMANDS (firmware v0.9.0+)
+  static const int comSetAutonomyMode = 0x40 | 36;
+  static const int comSetFormationSlot = 0x40 | 37;
+  static const int comSetQualCommand = 0x40 | 38;
+  static const int comSetSquareCommand = 0x40 | 39;
+
+  // commander.h AUTONOMY_*
+  static const int autonomyManual = 0,
+      autonomyQualification = 1,
+      autonomyMineSearch = 2,
+      autonomySquareTest = 3;
+
+  // QUALCMD_*
+  static const int qualLaunch = 1,
+      qualBeginOrbit = 2,
+      qualHold = 3,
+      qualLand = 4,
+      qualAbort = 5;
+
+  // SQUARECMD_*
+  static const int squareStart = 1, squareLand = 2, squareAbort = 3;
 
   // Maps to COM_REQUEST_STATE / COM_REPLY_STATE — the "dronestate" reply,
   // which carries position + flight status. There is no dedicated
@@ -57,10 +81,10 @@ class DroneComms {
   static const int comReplyInfo = 0x03;
 
   static const int nullMode = 0x00;
-  static const int calibrationMode = 0x01;
-  static const int motorSetpointMode = 0x02;
-  static const int posSetpointMode = 0x03;
-  static const int trajectoryMode = 0x04;
+  static const int calibrationMode = 0x02;
+  static const int motorSetpointMode = 0x04;
+  static const int posSetpointMode = 0x06;
+  static const int trajectoryMode = 0x07;
 }
 
 class DronePacket {
@@ -92,10 +116,7 @@ class DronePacket {
 }
 
 class DronePacketBuilder {
-  DronePacketBuilder({
-    required this.fromId,
-    required this.defaultToId,
-  });
+  DronePacketBuilder({required this.fromId, required this.defaultToId});
 
   final int fromId;
   final int defaultToId;
@@ -108,11 +129,7 @@ class DronePacketBuilder {
     return id;
   }
 
-  Uint8List headerOnly({
-    required int messageType,
-    int? toId,
-    int? messageId,
-  }) {
+  Uint8List headerOnly({required int messageType, int? toId, int? messageId}) {
     return build(
       toId: toId ?? defaultToId,
       messageType: messageType,
@@ -131,27 +148,27 @@ class DronePacketBuilder {
   }
 
   Uint8List motor4Floats({
-  required double m0,
-  required double m1,
-  required double m2,
-  required double m3,
-  int? toId,
-  int? messageId,
-}) {
-  final bd = ByteData(16);
+    required double m0,
+    required double m1,
+    required double m2,
+    required double m3,
+    int? toId,
+    int? messageId,
+  }) {
+    final bd = ByteData(16);
 
-  bd.setFloat32(0, m0.clamp(0.0, 1.0), Endian.little);
-  bd.setFloat32(4, m1.clamp(0.0, 1.0), Endian.little);
-  bd.setFloat32(8, m2.clamp(0.0, 1.0), Endian.little);
-  bd.setFloat32(12, m3.clamp(0.0, 1.0), Endian.little);
+    bd.setFloat32(0, m0.clamp(0.0, 1.0), Endian.little);
+    bd.setFloat32(4, m1.clamp(0.0, 1.0), Endian.little);
+    bd.setFloat32(8, m2.clamp(0.0, 1.0), Endian.little);
+    bd.setFloat32(12, m3.clamp(0.0, 1.0), Endian.little);
 
-  return build(
-    toId: toId ?? defaultToId,
-    messageType: DroneComms.comSetMotorCmd,
-    payload: bd.buffer.asUint8List(),
-    messageId: messageId ?? nextMessageId(),
-  );
-}
+    return build(
+      toId: toId ?? defaultToId,
+      messageType: DroneComms.comSetMotorCmd,
+      payload: bd.buffer.asUint8List(),
+      messageId: messageId ?? nextMessageId(),
+    );
+  }
 
   /// Builds a COM_SET_FLIGHTMODE packet. Payload matches the firmware's
   /// packed `flightmode.h` struct: [flightMode: uint8][commandLength: uint8],
@@ -170,13 +187,49 @@ class DronePacketBuilder {
     );
   }
 
+  /// Selects MANUAL, QUAL, MINE_SEARCH, or SQUARE.
+  Uint8List autonomyMode({required int mode, int? toId, int? messageId}) {
+    return singleByte(
+      messageType: DroneComms.comSetAutonomyMode,
+      value: mode,
+      toId: toId,
+      messageId: messageId,
+    );
+  }
+
+  /// Selects formation slot 0–3.
+  Uint8List formationSlot({required int slot, int? toId, int? messageId}) {
+    return singleByte(
+      messageType: DroneComms.comSetFormationSlot,
+      value: slot,
+      toId: toId,
+      messageId: messageId,
+    );
+  }
+
+  /// Sends a qualification action.
+  Uint8List qualCommand({required int command, int? toId, int? messageId}) {
+    return singleByte(
+      messageType: DroneComms.comSetQualCommand,
+      value: command,
+      toId: toId,
+      messageId: messageId,
+    );
+  }
+
+  /// Sends a square-test action.
+  Uint8List squareCommand({required int command, int? toId, int? messageId}) {
+    return singleByte(
+      messageType: DroneComms.comSetSquareCommand,
+      value: command,
+      toId: toId,
+      messageId: messageId,
+    );
+  }
+
   /// Builds a COM_SET_ACTUATION packet. Firmware checks the byte against
   /// MAXBYTE (0xFF) exactly, so anything else (including 0x00) disarms.
-  Uint8List actuation({
-    required bool armed,
-    int? toId,
-    int? messageId,
-  }) {
+  Uint8List actuation({required bool armed, int? toId, int? messageId}) {
     return singleByte(
       messageType: DroneComms.comSetActuation,
       value: armed ? 0xFF : 0x00,
@@ -290,6 +343,13 @@ class DroneTelemetry {
     this.batteryPercent,
     this.deviceId,
     this.firmwareVersion,
+    this.armed,
+    this.autonomyMode,
+    this.formationSlot,
+    this.qualState,
+    this.qualRevolutions,
+    this.squareState,
+    this.sensorStatus,
   });
 
   final Coordinate3? position;
@@ -305,6 +365,13 @@ class DroneTelemetry {
   final double? batteryPercent;
   final int? deviceId;
   final int? firmwareVersion;
+  final bool? armed;
+  final int? autonomyMode;
+  final int? formationSlot;
+  final int? qualState;
+  final int? qualRevolutions;
+  final int? squareState;
+  final int? sensorStatus;
 
   /// Returns a copy with any non-null fields from [update] overlaid on top
   /// of this telemetry, so partial replies (e.g. position-only) don't wipe
@@ -319,6 +386,13 @@ class DroneTelemetry {
       batteryPercent: update.batteryPercent ?? batteryPercent,
       deviceId: update.deviceId ?? deviceId,
       firmwareVersion: update.firmwareVersion ?? firmwareVersion,
+      armed: update.armed ?? armed,
+      autonomyMode: update.autonomyMode ?? autonomyMode,
+      formationSlot: update.formationSlot ?? formationSlot,
+      qualState: update.qualState ?? qualState,
+      qualRevolutions: update.qualRevolutions ?? qualRevolutions,
+      squareState: update.squareState ?? squareState,
+      sensorStatus: update.sensorStatus ?? sensorStatus,
     );
   }
 
@@ -353,12 +427,21 @@ class DroneTelemetry {
   /// Decodes a COM_REPLY_INFO payload ("droneinfo"): identification,
   /// firmware version, and battery. Wire layout:
   /// [deviceID,flightMode,triggerLock,actuation: uint8 x4]
-  /// [version: uint32][battery: float32] = 12 bytes.
+  /// [version: uint32][battery: float32], then mission bytes 12–17.
+  /// New firmware sends 20 bytes including trailing struct padding.
+  /// Direct decoding also accepts legacy 12-byte payloads; TCP uses 20.
   static DroneTelemetry? fromInfoReply(Uint8List payload) {
     if (payload.length < 12) return null;
 
     final bd = ByteData.sublistView(payload);
     return DroneTelemetry(
+      armed: payload[3] != 0,
+      autonomyMode: payload.length >= 18 ? payload[12] : null,
+      formationSlot: payload.length >= 18 ? payload[13] : null,
+      qualState: payload.length >= 18 ? payload[14] : null,
+      qualRevolutions: payload.length >= 18 ? payload[15] : null,
+      squareState: payload.length >= 18 ? payload[16] : null,
+      sensorStatus: payload.length >= 18 ? payload[17] : null,
       deviceId: payload[0],
       flightMode: payload[1],
       firmwareVersion: bd.getUint32(4, Endian.little),
@@ -374,8 +457,7 @@ class DroneTelemetry {
       if (attitude != null) 'att=$attitude',
       if (angularRate != null) 'w=$angularRate',
       if (flightMode != null) 'mode=$flightMode',
-      if (batteryPercent != null)
-        'batt=${batteryPercent!.toStringAsFixed(1)}%',
+      if (batteryPercent != null) 'batt=${batteryPercent!.toStringAsFixed(1)}%',
       if (deviceId != null)
         'id=0x${deviceId!.toRadixString(16).padLeft(2, '0')}',
       if (firmwareVersion != null) 'fw=$firmwareVersion',

@@ -21,7 +21,6 @@ class _DroneTcpConsoleState extends State<DroneTcpConsole> {
   late TcpClient _client;
   late final DronePacketBuilder _packetBuilder;
 
-  static const int _fromId = 0x47; // 'G'
   // static const int _toId = 0x42;   // 'B'
   final droneIdCtrl = TextEditingController(text: 'U');
 
@@ -100,9 +99,7 @@ class _DroneTcpConsoleState extends State<DroneTcpConsole> {
       if (droneIdCtrl.text != normalized) {
         droneIdCtrl.value = TextEditingValue(
           text: normalized,
-          selection: TextSelection.collapsed(
-            offset: normalized.length,
-          ),
+          selection: TextSelection.collapsed(offset: normalized.length),
         );
       }
 
@@ -120,14 +117,13 @@ class _DroneTcpConsoleState extends State<DroneTcpConsole> {
 
     final pkt = _packetBuilder.headerOnly(
       messageType: DroneComms.comPing,
-      toId: ctrl.targetDroneId
+      toId: ctrl.targetDroneId,
     );
 
     _client.sendBytes(pkt);
-    _append(_formatPacket(
-      'Sent COM_PING to ${ctrl.targetDroneCharacter}',
-      pkt,
-    ));
+    _append(
+      _formatPacket('Sent COM_PING to ${ctrl.targetDroneCharacter}', pkt),
+    );
   }
 
   void _requestWifiIp() {
@@ -144,53 +140,34 @@ class _DroneTcpConsoleState extends State<DroneTcpConsole> {
     );
 
     _client.sendBytes(pkt);
-    _append(_formatPacket(
-      'Sent COM_REQUEST_WIFI to ${ctrl.targetDroneCharacter}',
-      pkt,
-    ));
+    _append(
+      _formatPacket(
+        'Sent COM_REQUEST_WIFI to ${ctrl.targetDroneCharacter}',
+        pkt,
+      ),
+    );
   }
 
   void _requestPosition() {
-    if (!_client.isConnected) {
-      _append('Not connected.');
-      return;
-    }
+    context.read<DroneController>().requestState();
+  }
 
-    final ctrl = context.read<DroneController>();
-
-    final pkt = _packetBuilder.headerOnly(
-      messageType: DroneComms.comRequestPos,
-      toId: ctrl.targetDroneId,
-    );
-
-    _client.sendBytes(pkt);
-    _append(_formatPacket(
-      'Sent COM_REQUEST_POS to ${ctrl.targetDroneCharacter}',
-      pkt,
-    ));
+  void _requestStateEstimate() {
+    context.read<DroneController>().requestStateEstimate();
   }
 
   void _requestInfo() {
-    if (!_client.isConnected) {
-      _append('Not connected.');
-      return;
-    }
-
-    final ctrl = context.read<DroneController>();
-
-    final pkt = _packetBuilder.headerOnly(
-      messageType: DroneComms.comRequestInfo,
-      toId: ctrl.targetDroneId,
-    );
-
-    _client.sendBytes(pkt);
-    _append(_formatPacket(
-      'Sent COM_REQUEST_INFO to ${ctrl.targetDroneCharacter}',
-      pkt,
-    ));
+    context.read<DroneController>().requestInfo();
   }
 
   void _sendTestControlBytes() {
+    final controller = context.read<DroneController>();
+    if (!controller.missionInfoFresh ||
+        controller.telemetry.autonomyMode != 0 ||
+        controller.missionCommandPending) {
+      _append('Test Control blocked outside confirmed MANUAL mode');
+      return;
+    }
     if (!_client.isConnected) {
       _append('Not connected.');
       return;
@@ -207,10 +184,12 @@ class _DroneTcpConsoleState extends State<DroneTcpConsole> {
     );
 
     _client.sendBytes(pkt);
-    _append(_formatPacket(
-      'Sent TEST CONTROL FLOATS to ${ctrl.targetDroneCharacter}',
-      pkt,
-    ));
+    _append(
+      _formatPacket(
+        'Sent TEST CONTROL FLOATS to ${ctrl.targetDroneCharacter}',
+        pkt,
+      ),
+    );
   }
 
   String _formatPacket(String label, List<int> pkt) {
@@ -249,121 +228,152 @@ class _DroneTcpConsoleState extends State<DroneTcpConsole> {
               elevation: 2,
               child: Padding(
                 padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: SizedBox(
-                            height: 56,
-                            child: OutlinedButton(
-                              onPressed: _sendPing,
-                              child: const Text(
-                                'Send PING',
-                                style: TextStyle(fontSize: 18),
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: SizedBox(
+                              height: 56,
+                              child: OutlinedButton(
+                                onPressed:
+                                    connected &&
+                                        !droneCtrl.telemetryRequestPending
+                                    ? _sendPing
+                                    : null,
+                                child: const Text(
+                                  'Send PING',
+                                  style: TextStyle(fontSize: 18),
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: SizedBox(
-                            height: 56,
-                            child: OutlinedButton(
-                              onPressed: _requestWifiIp,
-                              child: const Text(
-                                'Get IP',
-                                style: TextStyle(fontSize: 18),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: SizedBox(
+                              height: 56,
+                              child: OutlinedButton(
+                                onPressed:
+                                    connected &&
+                                        !droneCtrl.telemetryRequestPending
+                                    ? _requestWifiIp
+                                    : null,
+                                child: const Text(
+                                  'Get IP',
+                                  style: TextStyle(fontSize: 18),
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: SizedBox(
-                            height: 56,
-                            child: OutlinedButton(
-                              onPressed: _requestPosition,
-                              child: const Text(
-                                'Get Pos',
-                                style: TextStyle(fontSize: 18),
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: SizedBox(
-                            height: 56,
-                            child: OutlinedButton(
-                              onPressed: _sendTestControlBytes,
-                              child: const Text(
-                                'Test Control',
-                                style: TextStyle(fontSize: 18),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: SizedBox(
-                            height: 56,
-                            child: OutlinedButton(
-                              onPressed: _requestInfo,
-                              child: const Text(
-                                'Get Info',
-                                style: TextStyle(fontSize: 18),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Telemetry:',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 8),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.04),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.black12),
+                        ],
                       ),
-                      child: Text(
-                        '${droneCtrl.telemetry}',
-                        style: const TextStyle(
-                          fontFamily: 'monospace',
-                          fontSize: 13,
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: SizedBox(
+                              height: 56,
+                              child: OutlinedButton(
+                                onPressed:
+                                    connected &&
+                                        !droneCtrl.telemetryRequestPending
+                                    ? _requestPosition
+                                    : null,
+                                child: const Text(
+                                  'Get State',
+                                  style: TextStyle(fontSize: 18),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: SizedBox(
+                              height: 56,
+                              child: OutlinedButton(
+                                onPressed: _sendTestControlBytes,
+                                child: const Text(
+                                  'Test Control',
+                                  style: TextStyle(fontSize: 18),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: SizedBox(
+                              height: 56,
+                              child: OutlinedButton(
+                                onPressed:
+                                    connected &&
+                                        !droneCtrl.telemetryRequestPending
+                                    ? _requestInfo
+                                    : null,
+                                child: const Text(
+                                  'Get Info',
+                                  style: TextStyle(fontSize: 18),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      OutlinedButton(
+                        onPressed:
+                            connected && !droneCtrl.telemetryRequestPending
+                            ? _requestStateEstimate
+                            : null,
+                        child: const Text('Get State Estimate'),
+                      ),
+                      if (droneCtrl.telemetryRequestPending)
+                        const Text('Waiting for telemetry reply…'),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Telemetry:',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.04),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.black12),
+                        ),
+                        child: Text(
+                          '${droneCtrl.telemetry}',
+                          style: const TextStyle(
+                            fontFamily: 'monospace',
+                            fontSize: 13,
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 20),
-                    Text(
-                      'Drone Printout:',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 8),
-                    Expanded(child: LogView(lines: _log)),
-                  ],
+                      const SizedBox(height: 20),
+                      Text(
+                        'Drone Printout:',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        height: 180,
+                        child: LogView(lines: [...droneCtrl.log, ..._log]),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             );
 
             final rightPane = SingleChildScrollView(
-               child: ConnectPanel(
+              child: ConnectPanel(
                 ipCtrl: ipCtrl,
                 portCtrl: portCtrl,
                 droneIdCtrl: droneIdCtrl,
